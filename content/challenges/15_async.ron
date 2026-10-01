@@ -1,0 +1,358 @@
+// Topic 15: Async Basics — "Online multiplayer & networking"
+// No async runtime is needed: the tests drive futures with a tiny hand-written executor.
+[
+    (
+        id: "async_01_forgot_await",
+        topic: "async",
+        kind: FixCompile,
+        difficulty: 2,
+        title: "The Score You Never Awaited",
+        story: "The matchmaker asks two servers for a player's score and adds them. The code looks right, but the compiler says it cannot add two... futures?",
+        task: "Fix the compile error so `total_score` returns the sum of both scores.",
+        signatures: ["pub async fn total_score(a: u32, b: u32) -> u32"],
+        starter_code: r##"async fn fetch_score(player: u32) -> u32 {
+    // Pretend this talks to a server.
+    player * 100
+}
+
+pub async fn total_score(a: u32, b: u32) -> u32 {
+    let first = fetch_score(a);
+    let second = fetch_score(b);
+    first + second
+}
+"##,
+        hidden_tests: r##"
+use std::future::Future;
+use std::pin::pin;
+use std::task::{Context, Poll, Waker};
+
+fn drive<F: Future>(fut: F) -> F::Output {
+    let mut fut = pin!(fut);
+    let mut cx = Context::from_waker(Waker::noop());
+    loop {
+        if let Poll::Ready(value) = fut.as_mut().poll(&mut cx) {
+            return value;
+        }
+    }
+}
+
+#[test]
+fn adds_both_scores() {
+    assert_eq!(drive(total_score(1, 2)), 300);
+    assert_eq!(drive(total_score(0, 0)), 0);
+}
+"##,
+        hints: [
+            "Calling an `async fn` does NOT run it: it returns a future — a value describing work that has not happened yet. You cannot add two futures.",
+            "To get the output of a future inside an async function, `.await` it. Each `fetch_score(..)` call needs it.",
+            "let first = fetch_score(a).await;\nlet second = fetch_score(b).await;",
+        ],
+        solution: r##"async fn fetch_score(player: u32) -> u32 {
+    // Pretend this talks to a server.
+    player * 100
+}
+
+pub async fn total_score(a: u32, b: u32) -> u32 {
+    let first = fetch_score(a).await;
+    let second = fetch_score(b).await;
+    first + second
+}
+"##,
+        explanation: "An `async fn` returns a `Future` immediately without running any of its body. The work only happens when something polls the future — and inside another async function, `.await` does exactly that: it suspends the caller until the future is ready and then gives you the output value. Forgetting `.await` leaves you holding an unstarted future (`impl Future<Output = u32>`), which is why `+` fails to compile.",
+        book_links: [
+            (title: "Asynchronous Programming in Rust: async/.await", url: "https://rust-lang.github.io/async-book/03_async_await/01_chapter.html"),
+            (title: "The Rust Book: Futures and the Async Syntax", url: "https://doc.rust-lang.org/book/ch17-01-futures-and-syntax.html"),
+        ],
+        prerequisites: [],
+        engine_tags: ["networking"],
+    ),
+    (
+        id: "async_02_countdown_future",
+        topic: "async",
+        kind: Complete,
+        difficulty: 4,
+        title: "A Future From the Inside",
+        story: "Networking code is built on futures that say \"not ready yet, wake me later\". To really understand `.await` you will write the smallest interesting one by hand: a countdown that needs several polls before it finishes.",
+        task: "Implement `poll` for `Countdown`: while `remaining > 0`, decrement it, call `cx.waker().wake_by_ref()` (so the executor polls again) and return `Poll::Pending`. When it reaches 0, return `Poll::Ready(\"liftoff\")`.",
+        signatures: ["impl Future for Countdown { type Output = &'static str; fn poll(…) -> Poll<…> }"],
+        starter_code: r##"use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+
+/// A future that is "not ready" `remaining` times, then completes with "liftoff".
+pub struct Countdown {
+    pub remaining: u32,
+}
+
+impl Future for Countdown {
+    type Output = &'static str;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        todo!()
+    }
+}
+"##,
+        hidden_tests: r##"
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::task::{Wake, Waker};
+
+struct CountingWaker(AtomicUsize);
+
+impl Wake for CountingWaker {
+    fn wake(self: Arc<Self>) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+/// Polls until ready; returns (times pending, times woken, output).
+fn poll_to_end(mut fut: Countdown) -> (usize, usize, &'static str) {
+    let state = Arc::new(CountingWaker(AtomicUsize::new(0)));
+    let waker = Waker::from(state.clone());
+    let mut cx = Context::from_waker(&waker);
+    let mut pending = 0;
+    loop {
+        match Pin::new(&mut fut).poll(&mut cx) {
+            Poll::Pending => pending += 1,
+            Poll::Ready(value) => return (pending, state.0.load(Ordering::SeqCst), value),
+        }
+        assert!(pending < 100, "the future never completes");
+    }
+}
+
+#[test]
+fn pending_until_the_countdown_ends() {
+    assert_eq!(poll_to_end(Countdown { remaining: 3 }), (3, 3, "liftoff"));
+}
+
+#[test]
+fn already_finished_is_ready_immediately() {
+    assert_eq!(poll_to_end(Countdown { remaining: 0 }), (0, 0, "liftoff"));
+}
+
+#[test]
+fn every_pending_poll_asks_to_be_woken() {
+    let (pending, woken, _) = poll_to_end(Countdown { remaining: 7 });
+    assert_eq!(pending, 7);
+    assert_eq!(woken, 7);
+}
+"##,
+        hints: [
+            "`poll` returns `Poll::Ready(value)` when the work is done and `Poll::Pending` when it is not. A `Pending` future MUST arrange to be woken, otherwise the executor would never poll it again.",
+            "`Countdown` contains only a `u32`, so it is `Unpin` and `self.remaining` can be changed through `Pin<&mut Self>` directly. Use `cx.waker().wake_by_ref()` to schedule another poll.",
+            "if self.remaining == 0 {\n    Poll::Ready(\"liftoff\")\n} else {\n    self.remaining -= 1;\n    cx.waker().wake_by_ref();\n    Poll::Pending\n}",
+        ],
+        solution: r##"use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+
+/// A future that is "not ready" `remaining` times, then completes with "liftoff".
+pub struct Countdown {
+    pub remaining: u32,
+}
+
+impl Future for Countdown {
+    type Output = &'static str;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if self.remaining == 0 {
+            Poll::Ready("liftoff")
+        } else {
+            self.remaining -= 1;
+            cx.waker().wake_by_ref();
+            Poll::Pending
+        }
+    }
+}
+"##,
+        explanation: "A `Future` is a state machine with one method, `poll`. An executor calls it; the future either finishes (`Poll::Ready(value)`) or says it cannot make progress yet (`Poll::Pending`). Before returning `Pending` it must store or call the `Waker` from the `Context`, which is how it promises \"poll me again when something changed\" — real futures hand the waker to the OS or a timer, ours simply wakes itself. `async fn` and `.await` are syntax that compiles into exactly this kind of state machine for you.",
+        book_links: [
+            (title: "Asynchronous Programming in Rust: The Future Trait", url: "https://rust-lang.github.io/async-book/02_execution/02_future.html"),
+            (title: "std docs: Future", url: "https://doc.rust-lang.org/std/future/trait.Future.html"),
+        ],
+        prerequisites: ["async_01_forgot_await"],
+        engine_tags: ["networking"],
+    ),
+    (
+        id: "async_03_block_on",
+        topic: "async",
+        kind: FromScratch,
+        difficulty: 5,
+        title: "Build the Smallest Executor",
+        story: "Async code does nothing until an executor polls it. Tokio and friends are big, but the core idea fits in a dozen lines: poll the future in a loop until it is ready.",
+        task: "Write `block_on`, which drives any future to completion on the current thread and returns its output. Use `std::pin::pin!` to pin the future, a no-op waker (`Waker::noop()`) and `Context::from_waker`.",
+        signatures: ["pub fn block_on<F: Future>(fut: F) -> F::Output"],
+        starter_code: "// Write `block_on` here (add the `use` lines you need).\n",
+        hidden_tests: r##"
+use std::cell::Cell;
+use std::future::Future;
+use std::pin::Pin;
+use std::rc::Rc;
+use std::task::{Context, Poll};
+
+/// A future that is pending `n` times before it yields `value`.
+struct YieldN {
+    n: u32,
+    value: u32,
+    polls: Rc<Cell<u32>>,
+}
+
+impl Future for YieldN {
+    type Output = u32;
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<u32> {
+        self.polls.set(self.polls.get() + 1);
+        if self.n == 0 {
+            Poll::Ready(self.value)
+        } else {
+            self.n -= 1;
+            cx.waker().wake_by_ref();
+            Poll::Pending
+        }
+    }
+}
+
+#[test]
+fn ready_futures_complete_at_once() {
+    assert_eq!(block_on(async { 5 }), 5);
+    assert_eq!(block_on(std::future::ready("done")), "done");
+}
+
+#[test]
+fn polls_until_ready() {
+    let polls = Rc::new(Cell::new(0));
+    let value = block_on(YieldN { n: 3, value: 42, polls: polls.clone() });
+    assert_eq!(value, 42);
+    assert_eq!(polls.get(), 4);
+}
+
+#[test]
+fn runs_async_blocks_with_awaits() {
+    let polls = Rc::new(Cell::new(0));
+    let p = polls.clone();
+    let total = block_on(async move {
+        let a = YieldN { n: 2, value: 10, polls: p.clone() }.await;
+        let b = YieldN { n: 1, value: 20, polls: p }.await;
+        a + b
+    });
+    assert_eq!(total, 30);
+    assert_eq!(polls.get(), 3 + 2);
+}
+
+#[test]
+fn returns_owned_output() {
+    let text = block_on(async { String::from("hello") + " world" });
+    assert_eq!(text, "hello world");
+}
+"##,
+        hints: [
+            "`Future::poll` needs a pinned mutable reference and a `Context`. `std::pin::pin!(fut)` pins a future on the stack; `fut.as_mut()` gives you the `Pin<&mut F>` for each poll. A `Context` is built from a `Waker` with `Context::from_waker(&waker)`.",
+            "`Waker::noop()` (stable since Rust 1.85) returns a reference to a waker that does nothing — good enough for a busy-polling executor. Loop: poll; if it is `Poll::Ready(value)` return it, otherwise poll again.",
+            "use std::future::Future;\nuse std::pin::pin;\nuse std::task::{Context, Poll, Waker};\n\npub fn block_on<F: Future>(fut: F) -> F::Output {\n    let mut fut = pin!(fut);\n    let mut cx = Context::from_waker(Waker::noop());\n    loop {\n        if let Poll::Ready(value) = fut.as_mut().poll(&mut cx) {\n            return value;\n        }\n    }\n}",
+        ],
+        solution: r##"use std::future::Future;
+use std::pin::pin;
+use std::task::{Context, Poll, Waker};
+
+pub fn block_on<F: Future>(fut: F) -> F::Output {
+    let mut fut = pin!(fut);
+    let mut cx = Context::from_waker(Waker::noop());
+    loop {
+        if let Poll::Ready(value) = fut.as_mut().poll(&mut cx) {
+            return value;
+        }
+    }
+}
+"##,
+        explanation: "An executor is just a loop around `poll`. `pin!` fixes the future in place on the stack (async blocks may contain references into themselves, so they must not move once polled), the `Waker` inside the `Context` is how futures ask to be polled again, and `Poll::Ready` ends the loop. Real executors improve on this in one way: instead of busy-polling, they sleep until a waker is actually called — that is the entire difference between this toy and Tokio's scheduler.",
+        book_links: [
+            (title: "Asynchronous Programming in Rust: Build an Executor", url: "https://rust-lang.github.io/async-book/02_execution/04_executor.html"),
+            (title: "std docs: Waker::noop", url: "https://doc.rust-lang.org/std/task/struct.Waker.html#method.noop"),
+        ],
+        prerequisites: ["async_02_countdown_future"],
+        engine_tags: ["networking"],
+    ),
+    (
+        id: "async_04_predict_lazy_futures",
+        topic: "async",
+        kind: PredictOutput,
+        difficulty: 3,
+        title: "Futures Do Nothing Until Polled",
+        story: "A junior wrote two async calls and expected both log lines. Predict what the console really shows (the little `block_on` helper just polls a future to completion).",
+        task: "What does this program print?",
+        explanation: "Calling `hello(\"a\")` and `hello(\"b\")` only CREATES two futures — nothing inside them runs yet, so \"created both\" comes first. `block_on(a)` polls only the first future, printing \"running a\" and producing \"a\". The second future is never polled (it is simply dropped), so \"running b\" never appears. Futures are lazy: no polling, no work.",
+        solution: "created both\nrunning a\na",
+        book_links: [
+            (title: "Asynchronous Programming in Rust: Futures Are Lazy", url: "https://rust-lang.github.io/async-book/03_async_await/01_chapter.html"),
+        ],
+        prerequisites: ["async_03_block_on"],
+        engine_tags: ["networking"],
+        quiz: Some((
+            question: "What does this program print?",
+            code: r##"use std::future::Future;
+use std::pin::pin;
+use std::task::{Context, Poll, Waker};
+
+fn block_on<F: Future>(fut: F) -> F::Output {
+    let mut fut = pin!(fut);
+    let mut cx = Context::from_waker(Waker::noop());
+    loop {
+        if let Poll::Ready(v) = fut.as_mut().poll(&mut cx) {
+            return v;
+        }
+    }
+}
+
+async fn hello(name: &'static str) -> &'static str {
+    println!("running {}", name);
+    name
+}
+
+fn main() {
+    let a = hello("a");
+    let b = hello("b");
+    println!("created both");
+    let out = block_on(a);
+    println!("{}", out);
+    drop(b);
+}"##,
+            options: [
+                "created both\nrunning a\na",
+                "running a\nrunning b\ncreated both\na",
+                "created both\nrunning a\nrunning b\na",
+                "running a\ncreated both\na",
+            ],
+            correct: 0,
+            verify: RunOutput,
+        )),
+    ),
+    (
+        id: "async_05_review_await_position",
+        topic: "async",
+        kind: CodeReview,
+        difficulty: 3,
+        title: "Review: Where Can You Await?",
+        story: "A pull request sprinkles `.await` through helper functions. The author insists all four variants are fine.",
+        task: "Which snippet does NOT compile?",
+        explanation: "`.await` can only appear inside an `async fn` or `async` block — the compiler turns the function into a state machine that can suspend, and an ordinary function has no way to do that (E0728). A normal function can still RETURN a future (`-> impl Future`) for the caller to await; and awaiting an intermediate variable inside an async function is fine too.",
+        solution: "Option A: `.await` is used inside an ordinary `fn`. Make the function `async` or return the future instead.",
+        book_links: [
+            (title: "The Rust Book: Futures and the Async Syntax", url: "https://doc.rust-lang.org/book/ch17-01-futures-and-syntax.html"),
+        ],
+        prerequisites: ["async_04_predict_lazy_futures"],
+        engine_tags: ["networking"],
+        quiz: Some((
+            question: "Which snippet does NOT compile?",
+            code: "",
+            options_are_code: true,
+            options: [
+                "fn g() -> u32 {\n    f().await\n}",
+                "async fn g() -> u32 {\n    f().await\n}",
+                "fn g() -> impl Future<Output = u32> {\n    f()\n}",
+                "async fn g() -> u32 {\n    let pending = f();\n    pending.await + 1\n}",
+            ],
+            correct: 0,
+            verify: OnlyCorrectFailsToCompile,
+            wrapper: "use std::future::Future;\n\nasync fn f() -> u32 {\n    1\n}\n\n{CODE}\n\nfn main() {}\n",
+        )),
+    ),
+]

@@ -1,0 +1,369 @@
+// Topic 17: Operators & Conversions — "Math library: Vec2, Vec3, Matrix"
+[
+    (
+        id: "advanced_traits_01_vec2_operators",
+        topic: "advanced_traits",
+        kind: Complete,
+        difficulty: 3,
+        title: "Vec2 Learns Arithmetic",
+        story: "Writing `a.add(b)` all over the physics code is painful. The math library should let programmers write `a + b`, `a - b`, `v * 2.0` and `-v`, just like built-in numbers.",
+        task: "Implement the operator traits `Add`, `Sub`, `Mul<f32>` (scale by a number) and `Neg` for `Vec2`.",
+        signatures: [
+            "impl Add for Vec2",
+            "impl Sub for Vec2",
+            "impl Mul<f32> for Vec2",
+            "impl Neg for Vec2",
+        ],
+        starter_code: r##"use std::ops::{Add, Mul, Neg, Sub};
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Vec2 {
+    pub x: f32,
+    pub y: f32,
+}
+
+impl Add for Vec2 {
+    type Output = Vec2;
+    fn add(self, other: Vec2) -> Vec2 {
+        todo!()
+    }
+}
+
+impl Sub for Vec2 {
+    type Output = Vec2;
+    fn sub(self, other: Vec2) -> Vec2 {
+        todo!()
+    }
+}
+
+impl Mul<f32> for Vec2 {
+    type Output = Vec2;
+    fn mul(self, factor: f32) -> Vec2 {
+        todo!()
+    }
+}
+
+impl Neg for Vec2 {
+    type Output = Vec2;
+    fn neg(self) -> Vec2 {
+        todo!()
+    }
+}
+"##,
+        hidden_tests: r##"
+fn v(x: f32, y: f32) -> Vec2 {
+    Vec2 { x, y }
+}
+
+#[test]
+fn adds_and_subtracts() {
+    assert_eq!(v(1.0, 2.0) + v(3.0, 4.0), v(4.0, 6.0));
+    assert_eq!(v(5.0, 5.0) - v(1.0, 2.0), v(4.0, 3.0));
+}
+
+#[test]
+fn scales_by_a_number() {
+    assert_eq!(v(1.5, -2.0) * 2.0, v(3.0, -4.0));
+    assert_eq!(v(1.0, 1.0) * 0.0, v(0.0, 0.0));
+}
+
+#[test]
+fn negates() {
+    assert_eq!(-v(1.0, -2.0), v(-1.0, 2.0));
+}
+
+#[test]
+fn operators_compose() {
+    let velocity = v(2.0, 0.0);
+    let gravity = v(0.0, -10.0);
+    let dt = 0.5;
+    assert_eq!(velocity + gravity * dt, v(2.0, -5.0));
+    assert_eq!(-(velocity - gravity), v(-2.0, -10.0));
+}
+"##,
+        hints: [
+            "`a + b` is sugar for `Add::add(a, b)`. Implementing the trait for your type is all it takes. Each trait has an associated type `Output` — the type of the result.",
+            "Build a new `Vec2` from the fields: `Vec2 { x: self.x + other.x, y: self.y + other.y }`. For `Mul<f32>` multiply both fields by the `factor`; for `Neg` negate both.",
+            "fn add(self, other: Vec2) -> Vec2 {\n    Vec2 { x: self.x + other.x, y: self.y + other.y }\n}\n// sub, mul and neg follow the same shape.",
+        ],
+        solution: r##"use std::ops::{Add, Mul, Neg, Sub};
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Vec2 {
+    pub x: f32,
+    pub y: f32,
+}
+
+impl Add for Vec2 {
+    type Output = Vec2;
+    fn add(self, other: Vec2) -> Vec2 {
+        Vec2 { x: self.x + other.x, y: self.y + other.y }
+    }
+}
+
+impl Sub for Vec2 {
+    type Output = Vec2;
+    fn sub(self, other: Vec2) -> Vec2 {
+        Vec2 { x: self.x - other.x, y: self.y - other.y }
+    }
+}
+
+impl Mul<f32> for Vec2 {
+    type Output = Vec2;
+    fn mul(self, factor: f32) -> Vec2 {
+        Vec2 { x: self.x * factor, y: self.y * factor }
+    }
+}
+
+impl Neg for Vec2 {
+    type Output = Vec2;
+    fn neg(self) -> Vec2 {
+        Vec2 { x: -self.x, y: -self.y }
+    }
+}
+"##,
+        explanation: "Operators in Rust are ordinary trait methods from `std::ops`: `+` is `Add`, `-` is `Sub`, `*` is `Mul`, unary `-` is `Neg`, and so on. Implementing them gives your own types the natural syntax of built-in numbers. The traits are generic over the right-hand side type (`Mul<f32>` multiplies by a number, `Mul<Vec2>` would be a different impl), and `Output` says what you get back. Keep operator meanings obvious — `+` should feel like addition.",
+        book_links: [
+            (title: "The Rust Book: Operator Overloading (Advanced Traits)", url: "https://doc.rust-lang.org/book/ch20-02-advanced-traits.html"),
+            (title: "Rust by Example: Operator Overloading", url: "https://doc.rust-lang.org/rust-by-example/trait/ops.html"),
+        ],
+        prerequisites: [],
+        engine_tags: ["math", "physics"],
+    ),
+    (
+        id: "advanced_traits_02_color_conversions",
+        topic: "advanced_traits",
+        kind: FromScratch,
+        difficulty: 4,
+        title: "Colors From Everywhere",
+        story: "Artists supply colors as `(r, g, b)` triples, as `0xRRGGBB` hex numbers and as `\"#rrggbb\"` strings from config files. The renderer should convert all of them into one `Rgb` type using the standard conversion traits.",
+        task: "Write `#[derive(Debug, PartialEq, Clone, Copy)] pub struct Rgb { pub r: u8, pub g: u8, pub b: u8 }` and implement `From<(u8, u8, u8)>`, `From<u32>` (`0xRRGGBB`) and `TryFrom<&str>` for `\"#rrggbb\"` with `type Error = String`.",
+        signatures: [
+            "pub struct Rgb { pub r: u8, pub g: u8, pub b: u8 }",
+            "impl From<(u8, u8, u8)> for Rgb",
+            "impl From<u32> for Rgb",
+            "impl TryFrom<&str> for Rgb { type Error = String; … }",
+        ],
+        starter_code: "// Write `Rgb` and its three conversions here.\n",
+        hidden_tests: r##"
+fn rgb(r: u8, g: u8, b: u8) -> Rgb {
+    Rgb { r, g, b }
+}
+
+#[test]
+fn from_a_tuple() {
+    assert_eq!(Rgb::from((255, 0, 128)), rgb(255, 0, 128));
+    let c: Rgb = (1, 2, 3).into();
+    assert_eq!(c, rgb(1, 2, 3));
+}
+
+#[test]
+fn from_a_hex_number() {
+    assert_eq!(Rgb::from(0xFF8000), rgb(255, 128, 0));
+    assert_eq!(Rgb::from(0x000000), rgb(0, 0, 0));
+    let c: Rgb = 0x0A0B0C.into();
+    assert_eq!(c, rgb(10, 11, 12));
+}
+
+#[test]
+fn from_a_hex_string() {
+    assert_eq!(Rgb::try_from("#ff8000"), Ok(rgb(255, 128, 0)));
+    assert_eq!(Rgb::try_from("#00FF7f"), Ok(rgb(0, 255, 127)));
+}
+
+#[test]
+fn bad_strings_are_errors() {
+    assert!(Rgb::try_from("ff8000").is_err());
+    assert!(Rgb::try_from("#ff80").is_err());
+    assert!(Rgb::try_from("#gg0000").is_err());
+    assert!(Rgb::try_from("").is_err());
+}
+"##,
+        hints: [
+            "`impl From<X> for Rgb` gives you `Rgb::from(x)` AND `x.into()` for free. `TryFrom` is the fallible sibling: `fn try_from(value: &str) -> Result<Rgb, String>`.",
+            "For `u32`: shift and mask — `(value >> 16) as u8` is red (casting to `u8` keeps the low byte). For the string: `strip_prefix('#')`, check the length is 6, then `u8::from_str_radix(&hex[0..2], 16)` for each pair (use `.map_err(…)` to build your `String` error).",
+            "fn try_from(text: &str) -> Result<Rgb, String> {\n    let hex = text.strip_prefix('#').ok_or(\"missing '#'\")?;\n    if hex.len() != 6 || !hex.is_ascii() {\n        return Err(String::from(\"expected 6 hex digits\"));\n    }\n    let part = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).map_err(|e| e.to_string());\n    Ok(Rgb { r: part(0)?, g: part(2)?, b: part(4)? })\n}",
+        ],
+        solution: r##"use std::convert::TryFrom;
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct Rgb {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+}
+
+impl From<(u8, u8, u8)> for Rgb {
+    fn from((r, g, b): (u8, u8, u8)) -> Rgb {
+        Rgb { r, g, b }
+    }
+}
+
+impl From<u32> for Rgb {
+    fn from(value: u32) -> Rgb {
+        Rgb {
+            r: (value >> 16) as u8,
+            g: (value >> 8) as u8,
+            b: value as u8,
+        }
+    }
+}
+
+impl TryFrom<&str> for Rgb {
+    type Error = String;
+
+    fn try_from(text: &str) -> Result<Rgb, String> {
+        let hex = text.strip_prefix('#').ok_or("missing '#'")?;
+        if hex.len() != 6 || !hex.is_ascii() {
+            return Err(String::from("expected 6 hex digits"));
+        }
+        let part = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).map_err(|e| e.to_string());
+        Ok(Rgb { r: part(0)?, g: part(2)?, b: part(4)? })
+    }
+}
+"##,
+        explanation: "`From<T>` is the standard way to say \"a `T` can always be turned into me\"; as a bonus the compiler gives you the matching `Into` for free, so callers can write `value.into()`. When the conversion can fail, implement `TryFrom<T>` with an `Error` type and return a `Result` — that is what `u8::try_from(300_i32)` does. Using the standard traits makes your type fit into generic code that takes `impl Into<Rgb>` or `T: TryInto<Rgb>`.",
+        book_links: [
+            (title: "std docs: From and Into", url: "https://doc.rust-lang.org/std/convert/trait.From.html"),
+            (title: "Rust by Example: From and Into", url: "https://doc.rust-lang.org/rust-by-example/conversion/from_into.html"),
+            (title: "Rust by Example: TryFrom and TryInto", url: "https://doc.rust-lang.org/rust-by-example/conversion/try_from_try_into.html"),
+        ],
+        prerequisites: ["advanced_traits_01_vec2_operators"],
+        engine_tags: ["math", "rendering"],
+    ),
+    (
+        id: "advanced_traits_03_display_refactor",
+        topic: "advanced_traits",
+        kind: Refactor,
+        difficulty: 3,
+        title: "Display, Not Ad-Hoc Strings",
+        story: "The inventory UI calls `item.to_string()` — but `Item` defines its OWN method with that name, so `println!(\"{}\", item)` and `format!` do not work and the logging crate cannot print items at all.",
+        task: "Refactor: remove the inherent `to_string` method and implement `std::fmt::Display` for `Item` instead (same output). `item.to_string()` keeps working automatically.",
+        signatures: ["impl fmt::Display for Item"],
+        starter_code: r##"pub struct Item {
+    pub name: String,
+    pub quantity: u32,
+}
+
+impl Item {
+    pub fn to_string(&self) -> String {
+        format!("{} x{}", self.name, self.quantity)
+    }
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn renders_name_and_quantity() {
+    let item = Item { name: String::from("Potion"), quantity: 3 };
+    assert_eq!(item.to_string(), "Potion x3");
+}
+
+#[test]
+fn works_for_other_items() {
+    let item = Item { name: String::new(), quantity: 0 };
+    assert_eq!(item.to_string(), " x0");
+}
+"##,
+        checks: [
+            RequireText(text: "Display", message: "Implement the `std::fmt::Display` trait for `Item`."),
+            ForbidText(text: "fn to_string", message: "Remove your own `to_string` method: the `Display` trait provides `to_string()` automatically."),
+        ],
+        hints: [
+            "Implementing `std::fmt::Display` lets a type be used with `{}` in `println!`/`format!`. As a bonus every `Display` type gets `.to_string()` for free (through the blanket `ToString` impl).",
+            "The trait has one method: `fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result`. Use `write!(f, …)` to produce the text.",
+            "use std::fmt;\n\nimpl fmt::Display for Item {\n    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {\n        write!(f, \"{} x{}\", self.name, self.quantity)\n    }\n}",
+        ],
+        solution: r##"use std::fmt;
+
+pub struct Item {
+    pub name: String,
+    pub quantity: u32,
+}
+
+impl fmt::Display for Item {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} x{}", self.name, self.quantity)
+    }
+}
+"##,
+        explanation: "Rust formatting is trait based: `Display` powers `{}`, `Debug` powers `{:?}`. A hand-written `to_string` method works for exactly one call site, whereas implementing `Display` plugs your type into `println!`, `format!`, `write!`, logging, error messages and generic code — and the standard library's blanket `impl<T: Display> ToString for T` gives you `.to_string()` for free. (Clippy even has a lint, `inherent_to_string`, for this mistake.)",
+        book_links: [
+            (title: "Rust by Example: Display", url: "https://doc.rust-lang.org/rust-by-example/hello/print/print_display.html"),
+            (title: "std docs: fmt::Display", url: "https://doc.rust-lang.org/std/fmt/trait.Display.html"),
+        ],
+        prerequisites: ["advanced_traits_02_color_conversions"],
+        engine_tags: ["ui", "inventory"],
+    ),
+    (
+        id: "advanced_traits_04_predict_derive_ord",
+        topic: "advanced_traits",
+        kind: PredictOutput,
+        difficulty: 4,
+        title: "How Does Derived Ordering Compare?",
+        story: "The ranked ladder sorts players by `Rank`, which derives `PartialOrd`. The designers argue about whether a Silver player with 99 points beats a Gold player. Settle it by predicting the output.",
+        task: "What does this program print?",
+        explanation: "Derived `PartialOrd` compares enum values first by the ORDER OF THE VARIANTS in the declaration (Bronze < Silver < Gold), and only when both values are the same variant does it compare the fields, lexicographically. So `Bronze < Silver(0)` is true; `Silver(5) < Silver(3)` is false (5 > 3); `Gold { stars: 1 } > Silver(99)` is true because Gold comes later; and comparing `Silver(2)` with itself gives `Some(Equal)`.",
+        solution: "true\nfalse\ntrue\nSome(Equal)",
+        book_links: [
+            (title: "std docs: PartialOrd — derivable", url: "https://doc.rust-lang.org/std/cmp/trait.PartialOrd.html#derivable"),
+            (title: "The Rust Book: Derivable Traits", url: "https://doc.rust-lang.org/book/appendix-03-derivable-traits.html"),
+        ],
+        prerequisites: ["advanced_traits_03_display_refactor"],
+        engine_tags: ["math"],
+        quiz: Some((
+            question: "What does this program print?",
+            code: r##"#[derive(Debug, PartialEq, PartialOrd)]
+enum Rank {
+    Bronze,
+    Silver(u32),
+    Gold { stars: u32 },
+}
+
+fn main() {
+    println!("{}", Rank::Bronze < Rank::Silver(0));
+    println!("{}", Rank::Silver(5) < Rank::Silver(3));
+    println!("{}", Rank::Gold { stars: 1 } > Rank::Silver(99));
+    println!("{:?}", Rank::Silver(2).partial_cmp(&Rank::Silver(2)));
+}"##,
+            options: [
+                "true\nfalse\ntrue\nSome(Equal)",
+                "true\ntrue\nfalse\nSome(Equal)",
+                "false\nfalse\ntrue\nSome(Less)",
+                "true\nfalse\nfalse\nSome(Equal)",
+            ],
+            correct: 0,
+            verify: RunOutput,
+        )),
+    ),
+    (
+        id: "advanced_traits_05_review_orphan_rule",
+        topic: "advanced_traits",
+        kind: CodeReview,
+        difficulty: 5,
+        title: "Review: The Orphan Rule",
+        story: "A teammate wants to \"just add\" operators and conversions to types from other crates. Four trait impls were submitted; the compiler's *orphan rule* blocks one of them.",
+        task: "Which impl does NOT compile? (`Meters` is a struct defined in this crate.)",
+        explanation: "The orphan rule: you may implement a trait for a type only if the trait OR the type is local to your crate. `impl Add for Vec<f32>` has neither — `Add` and `Vec` both come from `std` — so it is rejected (E0117); wrap the `Vec` in your own newtype instead. The other three are fine because `Meters` appears in them: as the implementing type (A), or as a type parameter of the foreign trait (`Add<Meters> for f32` and `From<Meters> for f32`). The rule guarantees two crates can never write conflicting impls.",
+        solution: "Option B: `Add` and `Vec<f32>` are both foreign, so the orphan rule forbids the impl. Wrap the vector in a newtype.",
+        book_links: [
+            (title: "The Rust Book: Implementing External Traits with the Newtype Pattern", url: "https://doc.rust-lang.org/book/ch20-02-advanced-traits.html"),
+            (title: "The Rust Reference: Trait implementation coherence", url: "https://doc.rust-lang.org/reference/items/implementations.html#orphan-rules"),
+        ],
+        prerequisites: ["advanced_traits_04_predict_derive_ord"],
+        engine_tags: ["math"],
+        quiz: Some((
+            question: "Which impl does NOT compile? (`Meters` is a struct defined in this crate.)",
+            code: "",
+            options_are_code: true,
+            options: [
+                "impl Add for Meters {\n    type Output = Meters;\n    fn add(self, other: Meters) -> Meters {\n        Meters(self.0 + other.0)\n    }\n}",
+                "impl Add for Vec<f32> {\n    type Output = Vec<f32>;\n    fn add(self, other: Vec<f32>) -> Vec<f32> {\n        self.iter().zip(&other).map(|(a, b)| a + b).collect()\n    }\n}",
+                "impl Add<Meters> for f32 {\n    type Output = Meters;\n    fn add(self, other: Meters) -> Meters {\n        Meters(self + other.0)\n    }\n}",
+                "impl From<Meters> for f32 {\n    fn from(m: Meters) -> f32 {\n        m.0\n    }\n}",
+            ],
+            correct: 1,
+            verify: OnlyCorrectFailsToCompile,
+            wrapper: "use std::ops::Add;\n\n#[derive(Clone, Copy)]\nstruct Meters(f32);\n\n{CODE}\n\nfn main() {}\n",
+        )),
+    ),
+]

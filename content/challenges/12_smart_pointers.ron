@@ -1,0 +1,317 @@
+// Topic 12: Smart Pointers — "Scene graph / object trees"
+[
+    (
+        id: "smart_pointers_01_boxed_dialogue",
+        topic: "smart_pointers",
+        kind: FixCompile,
+        difficulty: 2,
+        title: "A Dialogue Tree of Infinite Size",
+        story: "Branching dialogue is a tree: a choice leads to more dialogue, which may contain more choices. The designer's first attempt defines `Dialogue` in terms of itself — and the compiler refuses to guess how big that is.",
+        task: "Fix the compile error so a `Choice` can hold two further `Dialogue`s. `count_lines` must keep working (it counts the `Line` leaves of the tree).",
+        signatures: ["pub enum Dialogue { Line(String), Choice(String, …, …) }", "pub fn count_lines(d: &Dialogue) -> usize"],
+        starter_code: r##"pub enum Dialogue {
+    Line(String),
+    Choice(String, Dialogue, Dialogue),
+}
+
+pub fn count_lines(d: &Dialogue) -> usize {
+    match d {
+        Dialogue::Line(_) => 1,
+        Dialogue::Choice(_, yes, no) => count_lines(yes) + count_lines(no),
+    }
+}
+"##,
+        hidden_tests: r##"
+fn line(text: &str) -> Dialogue {
+    Dialogue::Line(text.to_string())
+}
+
+#[test]
+fn a_single_line_counts_as_one() {
+    assert_eq!(count_lines(&line("Hello")), 1);
+}
+
+#[test]
+fn nested_choices_are_counted() {
+    let tree = Dialogue::Choice(
+        "Open the door?".to_string(),
+        Box::new(line("It creaks open.")),
+        Box::new(Dialogue::Choice(
+            "Knock instead?".to_string(),
+            Box::new(line("Nobody answers.")),
+            Box::new(line("You walk away.")),
+        )),
+    );
+    assert_eq!(count_lines(&tree), 3);
+}
+"##,
+        hints: [
+            "A value of type `Dialogue` would have to contain two more `Dialogue`s inline, which contain two more…: the size would be infinite. Rust must know every type's size at compile time.",
+            "Put the recursive parts behind a pointer of known size. The simplest owning pointer is `Box<T>`, which stores its contents on the heap.",
+            "Choice(String, Box<Dialogue>, Box<Dialogue>)\n// build values with Box::new(...); count_lines can stay exactly as it is (deref coercion).",
+        ],
+        solution: r##"pub enum Dialogue {
+    Line(String),
+    Choice(String, Box<Dialogue>, Box<Dialogue>),
+}
+
+pub fn count_lines(d: &Dialogue) -> usize {
+    match d {
+        Dialogue::Line(_) => 1,
+        Dialogue::Choice(_, yes, no) => count_lines(yes) + count_lines(no),
+    }
+}
+"##,
+        explanation: "Rust lays out every value at a size known at compile time, so a type cannot contain itself directly (error E0072). `Box<T>` is a pointer to heap memory: always one machine word, no matter how big `T` is. Putting the recursive fields in a `Box` breaks the infinite regress, and is the standard way to build linked lists, trees and expression ASTs. `count_lines` still works because `&Box<Dialogue>` automatically dereferences to `&Dialogue`.",
+        book_links: [
+            (title: "The Rust Book: Using Box<T> to Point to Data on the Heap", url: "https://doc.rust-lang.org/book/ch15-01-box.html"),
+            (title: "Rust by Example: Box, stack and heap", url: "https://doc.rust-lang.org/rust-by-example/std/box.html"),
+        ],
+        prerequisites: [],
+        engine_tags: ["dialogue", "scene"],
+    ),
+    (
+        id: "smart_pointers_02_shared_textures",
+        topic: "smart_pointers",
+        kind: Complete,
+        difficulty: 3,
+        title: "A Thousand Sprites, One Texture",
+        story: "Loading the same 4 MB texture once per sprite would eat the memory budget. Sprites should SHARE one texture, and the texture should be freed when the last sprite using it is gone.",
+        task: "Implement `make_sprites` (every sprite shares the given texture — no copies) and `owners` (how many handles currently own the texture, including the caller's).",
+        signatures: [
+            "pub fn make_sprites(texture: &Rc<Texture>, count: usize) -> Vec<Sprite>",
+            "pub fn owners(texture: &Rc<Texture>) -> usize",
+        ],
+        starter_code: r##"use std::rc::Rc;
+
+pub struct Texture {
+    pub name: String,
+}
+
+pub struct Sprite {
+    pub texture: Rc<Texture>,
+}
+
+/// Create `count` sprites that all share `texture`.
+pub fn make_sprites(texture: &Rc<Texture>, count: usize) -> Vec<Sprite> {
+    todo!()
+}
+
+/// How many owners does the texture have right now (including the caller's handle)?
+pub fn owners(texture: &Rc<Texture>) -> usize {
+    todo!()
+}
+"##,
+        hidden_tests: r##"
+fn texture() -> Rc<Texture> {
+    Rc::new(Texture { name: "grass.png".to_string() })
+}
+
+#[test]
+fn sprites_share_the_same_texture() {
+    let tex = texture();
+    let sprites = make_sprites(&tex, 3);
+    assert_eq!(sprites.len(), 3);
+    for s in &sprites {
+        assert!(Rc::ptr_eq(&s.texture, &tex));
+        assert_eq!(s.texture.name, "grass.png");
+    }
+}
+
+#[test]
+fn owners_counts_every_sprite_plus_the_caller() {
+    let tex = texture();
+    assert_eq!(owners(&tex), 1);
+    let sprites = make_sprites(&tex, 4);
+    assert_eq!(owners(&tex), 5);
+    drop(sprites);
+    assert_eq!(owners(&tex), 1);
+}
+
+#[test]
+fn zero_sprites_is_fine() {
+    let tex = texture();
+    assert!(make_sprites(&tex, 0).is_empty());
+    assert_eq!(owners(&tex), 1);
+}
+"##,
+        hints: [
+            "`Rc<T>` is a reference-counted pointer: cloning an `Rc` does NOT copy the value, it just bumps a counter and hands out another owner.",
+            "`Rc::clone(texture)` creates one more owner. `Rc::strong_count(texture)` tells you how many owners exist.",
+            "pub fn make_sprites(texture: &Rc<Texture>, count: usize) -> Vec<Sprite> {\n    (0..count).map(|_| Sprite { texture: Rc::clone(texture) }).collect()\n}\n\npub fn owners(texture: &Rc<Texture>) -> usize {\n    Rc::strong_count(texture)\n}",
+        ],
+        solution: r##"use std::rc::Rc;
+
+pub struct Texture {
+    pub name: String,
+}
+
+pub struct Sprite {
+    pub texture: Rc<Texture>,
+}
+
+/// Create `count` sprites that all share `texture`.
+pub fn make_sprites(texture: &Rc<Texture>, count: usize) -> Vec<Sprite> {
+    (0..count)
+        .map(|_| Sprite {
+            texture: Rc::clone(texture),
+        })
+        .collect()
+}
+
+/// How many owners does the texture have right now (including the caller's handle)?
+pub fn owners(texture: &Rc<Texture>) -> usize {
+    Rc::strong_count(texture)
+}
+"##,
+        explanation: "Ordinary ownership allows exactly one owner. When several parts of a program need to own the same data, `Rc<T>` (reference counted, single-threaded) keeps a counter of owners: `Rc::clone` is cheap — it only increments the counter — and the value is dropped when the last `Rc` goes away. The convention `Rc::clone(&x)` (instead of `x.clone()`) makes it obvious that no deep copy happens. For multithreaded code the equivalent is `Arc<T>`.",
+        book_links: [
+            (title: "The Rust Book: Rc<T>, the Reference Counted Smart Pointer", url: "https://doc.rust-lang.org/book/ch15-04-rc.html"),
+            (title: "Rust by Example: Rc", url: "https://doc.rust-lang.org/rust-by-example/std/rc.html"),
+        ],
+        prerequisites: ["smart_pointers_01_boxed_dialogue"],
+        engine_tags: ["assets", "scene"],
+    ),
+    (
+        id: "smart_pointers_03_refcell_transfer",
+        topic: "smart_pointers",
+        kind: FindBug,
+        difficulty: 4,
+        title: "The Chest That Panics",
+        story: "Players can move gold between shared chests. Everything works in testing — until a player drags gold from a chest onto itself and the whole game crashes with `already borrowed: BorrowMutError`.",
+        task: "Fix `transfer` so that moving gold from a chest to the very same chest changes nothing and does NOT panic. Normal transfers must keep working.",
+        signatures: ["pub fn transfer(from: &RefCell<i32>, to: &RefCell<i32>, amount: i32)"],
+        starter_code: r##"use std::cell::RefCell;
+
+/// Move `amount` gold from one shared chest to another.
+pub fn transfer(from: &RefCell<i32>, to: &RefCell<i32>, amount: i32) {
+    let mut source = from.borrow_mut();
+    let mut target = to.borrow_mut();
+    *source -= amount;
+    *target += amount;
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn moves_gold_between_chests() {
+    let a = RefCell::new(100);
+    let b = RefCell::new(5);
+    transfer(&a, &b, 30);
+    assert_eq!(*a.borrow(), 70);
+    assert_eq!(*b.borrow(), 35);
+}
+
+#[test]
+fn moving_gold_onto_itself_is_a_no_op() {
+    let chest = RefCell::new(50);
+    transfer(&chest, &chest, 10);
+    assert_eq!(*chest.borrow(), 50);
+}
+
+#[test]
+fn chests_can_go_negative_for_now() {
+    let a = RefCell::new(1);
+    let b = RefCell::new(0);
+    transfer(&a, &b, 5);
+    assert_eq!(*a.borrow(), -4);
+    assert_eq!(*b.borrow(), 5);
+}
+"##,
+        hints: [
+            "`RefCell` checks the borrowing rules at RUNTIME. Asking for two `borrow_mut()`s of the same cell at once panics. When can `from` and `to` be the same cell?",
+            "If both references point to the same `RefCell`, the second `borrow_mut()` panics. You can detect that with `std::ptr::eq(from, to)`.",
+            "if std::ptr::eq(from, to) {\n    return;\n}\n// … then the original body",
+        ],
+        solution: r##"use std::cell::RefCell;
+
+/// Move `amount` gold from one shared chest to another.
+pub fn transfer(from: &RefCell<i32>, to: &RefCell<i32>, amount: i32) {
+    if std::ptr::eq(from, to) {
+        return;
+    }
+    let mut source = from.borrow_mut();
+    let mut target = to.borrow_mut();
+    *source -= amount;
+    *target += amount;
+}
+"##,
+        explanation: "`RefCell<T>` gives *interior mutability*: you can mutate through a shared reference, because the aliasing rules (one `&mut` XOR many `&`) are checked when the program runs instead of when it compiles. The price is that a violation becomes a panic (`BorrowMutError`) instead of a compile error. Here the compiler cannot know that `from` and `to` may be the same cell, so we handle that case explicitly. Prefer plain `&mut` where possible; reach for `RefCell` (often as `Rc<RefCell<T>>`) when shared ownership AND mutation are really needed.",
+        book_links: [
+            (title: "The Rust Book: RefCell<T> and the Interior Mutability Pattern", url: "https://doc.rust-lang.org/book/ch15-05-interior-mutability.html"),
+            (title: "std docs: RefCell", url: "https://doc.rust-lang.org/std/cell/struct.RefCell.html"),
+        ],
+        prerequisites: ["smart_pointers_02_shared_textures"],
+        engine_tags: ["inventory", "scene"],
+    ),
+    (
+        id: "smart_pointers_04_predict_rc",
+        topic: "smart_pointers",
+        kind: PredictOutput,
+        difficulty: 3,
+        title: "Counting Owners",
+        story: "The asset debugger prints `Rc::strong_count` at various points. Can you predict the numbers?",
+        task: "What does this program print?",
+        explanation: "`a` is the only owner at first: 1. `b` and `c` are clones, so three owners exist inside the inner block when `c` is printed: 3. At the closing brace `c` is dropped, leaving `a` and `b`: 2. `drop(a)` releases one more owner, leaving only `b`: 1. The string itself is freed when that last owner goes away.",
+        solution: "1\n3\n2\n1",
+        book_links: [
+            (title: "The Rust Book: Cloning an Rc<T> Increases the Reference Count", url: "https://doc.rust-lang.org/book/ch15-04-rc.html"),
+        ],
+        prerequisites: ["smart_pointers_03_refcell_transfer"],
+        engine_tags: ["assets"],
+        quiz: Some((
+            question: "What does this program print?",
+            code: r##"use std::rc::Rc;
+
+fn main() {
+    let a = Rc::new(String::from("sword"));
+    println!("{}", Rc::strong_count(&a));
+    let b = Rc::clone(&a);
+    {
+        let c = Rc::clone(&a);
+        println!("{}", Rc::strong_count(&c));
+    }
+    println!("{}", Rc::strong_count(&b));
+    drop(a);
+    println!("{}", Rc::strong_count(&b));
+}"##,
+            options: [
+                "1\n3\n2\n1",
+                "1\n2\n2\n1",
+                "1\n3\n3\n2",
+                "1\n3\n2\n2",
+            ],
+            correct: 0,
+            verify: RunOutput,
+        )),
+    ),
+    (
+        id: "smart_pointers_05_review_rc_mutation",
+        topic: "smart_pointers",
+        kind: CodeReview,
+        difficulty: 3,
+        title: "Review: Shared Counters",
+        story: "Four ways to keep a shared counter were proposed in a design review. One of them was written by someone who thought `Rc` allowed mutation.",
+        task: "Which snippet does NOT compile?",
+        explanation: "`Rc<T>` only hands out SHARED references to its contents, because several owners exist at once — so `*shared += 1` is rejected (E0594: cannot assign to data in an `Rc`). To mutate shared data, wrap the value in a type with interior mutability: `Rc<RefCell<T>>` (runtime-checked borrows) or `Rc<Cell<T>>` for small `Copy` values. Cloning an `Rc` and reading through it is of course fine.",
+        solution: "Option B: `Rc<i32>` gives only shared access; assigning through it is rejected. Use `Rc<RefCell<i32>>` or `Rc<Cell<i32>>`.",
+        book_links: [
+            (title: "The Rust Book: Having Multiple Owners of Mutable Data by Combining Rc<T> and RefCell<T>", url: "https://doc.rust-lang.org/book/ch15-05-interior-mutability.html"),
+        ],
+        prerequisites: ["smart_pointers_04_predict_rc"],
+        engine_tags: ["scene"],
+        quiz: Some((
+            question: "Which snippet does NOT compile?",
+            code: "",
+            options_are_code: true,
+            options: [
+                "let shared = Rc::new(RefCell::new(0));\n*shared.borrow_mut() += 1;",
+                "let shared = Rc::new(0);\n*shared += 1;",
+                "let shared = Rc::new(Cell::new(0));\nshared.set(shared.get() + 1);",
+                "let a = Rc::new(String::from(\"x\"));\nlet b = Rc::clone(&a);\nprintln!(\"{} {}\", a, b);",
+            ],
+            correct: 1,
+            verify: OnlyCorrectFailsToCompile,
+            wrapper: "use std::cell::{Cell, RefCell};\nuse std::rc::Rc;\n\nfn main() {\n{CODE}\n}\n",
+        )),
+    ),
+]

@@ -1,0 +1,264 @@
+// Topic 14: Concurrency — "Multithreaded asset loading & job system"
+[
+    (
+        id: "concurrency_01_move_closure",
+        topic: "concurrency",
+        kind: FixCompile,
+        difficulty: 2,
+        title: "A Worker That Borrows Too Much",
+        story: "The loader hands each asset name to a background thread. The compiler complains that the thread might outlive the function that owns the name.",
+        task: "Fix the compile error so `shout_in_thread` computes the uppercase name on a background thread and returns it.",
+        signatures: ["pub fn shout_in_thread(name: String) -> String"],
+        starter_code: r##"use std::thread;
+
+pub fn shout_in_thread(name: String) -> String {
+    let handle = thread::spawn(|| name.to_uppercase());
+    handle.join().expect("worker thread panicked")
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn uppercases_in_a_thread() {
+    assert_eq!(shout_in_thread(String::from("grass.png")), "GRASS.PNG");
+    assert_eq!(shout_in_thread(String::new()), "");
+}
+"##,
+        hints: [
+            "A spawned thread can keep running after the function that created it returns. So the thread's closure must not merely BORROW local variables — they would be gone.",
+            "Give the closure ownership of what it uses with the `move` keyword in front of the closure: `move || …`.",
+            "let handle = thread::spawn(move || name.to_uppercase());",
+        ],
+        solution: r##"use std::thread;
+
+pub fn shout_in_thread(name: String) -> String {
+    let handle = thread::spawn(move || name.to_uppercase());
+    handle.join().expect("worker thread panicked")
+}
+"##,
+        explanation: "`thread::spawn` requires its closure to be `'static`: it may not borrow anything from the spawning function, because the new thread can outlive it. The `move` keyword transfers ownership of every captured variable into the closure (here `name`), so the thread owns its data and the compiler's E0373 goes away. `join()` waits for the thread and returns its result — or an `Err` if the thread panicked.",
+        book_links: [
+            (title: "The Rust Book: Using move Closures with Threads", url: "https://doc.rust-lang.org/book/ch16-01-threads.html"),
+            (title: "Rust by Example: Threads", url: "https://doc.rust-lang.org/rust-by-example/std_misc/threads.html"),
+        ],
+        prerequisites: [],
+        engine_tags: ["assets", "jobs"],
+    ),
+    (
+        id: "concurrency_02_rc_to_arc",
+        topic: "concurrency",
+        kind: FixCompile,
+        difficulty: 3,
+        title: "Counting Frames From Eight Threads",
+        story: "Eight worker threads each add one to a shared counter protected by a `Mutex`. The author used `Rc` to share it. The compiler's message mentions a trait called `Send`.",
+        task: "Fix the compile error so `count_in_threads(n)` returns `n` after `n` threads each incremented the shared counter once.",
+        signatures: ["pub fn count_in_threads(threads: u32) -> u32"],
+        starter_code: r##"use std::rc::Rc;
+use std::sync::Mutex;
+use std::thread;
+
+pub fn count_in_threads(threads: u32) -> u32 {
+    let counter = Rc::new(Mutex::new(0));
+    let mut handles = Vec::new();
+    for _ in 0..threads {
+        let counter = Rc::clone(&counter);
+        handles.push(thread::spawn(move || {
+            *counter.lock().expect("lock poisoned") += 1;
+        }));
+    }
+    for handle in handles {
+        handle.join().expect("worker panicked");
+    }
+    let total = *counter.lock().expect("lock poisoned");
+    total
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn every_thread_increments_once() {
+    assert_eq!(count_in_threads(0), 0);
+    assert_eq!(count_in_threads(1), 1);
+    assert_eq!(count_in_threads(8), 8);
+}
+
+#[test]
+fn many_threads_do_not_lose_updates() {
+    assert_eq!(count_in_threads(64), 64);
+}
+"##,
+        hints: [
+            "`Rc` uses a plain (non-atomic) counter, so it is NOT safe to share between threads — the compiler knows this because `Rc` does not implement `Send`.",
+            "The thread-safe version of `Rc` is `Arc` (\"atomically reference counted\") in `std::sync`. The API is the same: `Arc::new`, `Arc::clone`.",
+            "use std::sync::{Arc, Mutex};\n// …\nlet counter = Arc::new(Mutex::new(0));\n// …\nlet counter = Arc::clone(&counter);",
+        ],
+        solution: r##"use std::sync::{Arc, Mutex};
+use std::thread;
+
+pub fn count_in_threads(threads: u32) -> u32 {
+    let counter = Arc::new(Mutex::new(0));
+    let mut handles = Vec::new();
+    for _ in 0..threads {
+        let counter = Arc::clone(&counter);
+        handles.push(thread::spawn(move || {
+            *counter.lock().expect("lock poisoned") += 1;
+        }));
+    }
+    for handle in handles {
+        handle.join().expect("worker panicked");
+    }
+    let total = *counter.lock().expect("lock poisoned");
+    total
+}
+"##,
+        explanation: "Rust prevents data races at compile time with two marker traits: `Send` (a value may be moved to another thread) and `Sync` (a value may be shared between threads by reference). `Rc` is neither, because its reference count is not atomic; `Arc` is the thread-safe equivalent. `Mutex<T>` then provides the safe mutation: you can only reach the data through `lock()`, and the lock is released when the guard goes out of scope. `Arc<Mutex<T>>` is the standard recipe for shared mutable state across threads.",
+        book_links: [
+            (title: "The Rust Book: Shared-State Concurrency", url: "https://doc.rust-lang.org/book/ch16-03-shared-state.html"),
+            (title: "The Rust Book: Extensible Concurrency with Sync and Send", url: "https://doc.rust-lang.org/book/ch16-04-extensible-concurrency-sync-and-send.html"),
+        ],
+        prerequisites: ["concurrency_01_move_closure"],
+        engine_tags: ["jobs"],
+    ),
+    (
+        id: "concurrency_03_parallel_sum",
+        topic: "concurrency",
+        kind: FromScratch,
+        difficulty: 4,
+        title: "Sum a Million Scores in Parallel",
+        story: "The analytics job adds up millions of player scores. It should split the work across threads — without copying the data, since the scores already live in a big slice.",
+        task: "Write `parallel_sum(data, workers)`: split `data` into at most `workers` chunks, add up each chunk on its own thread and return the grand total. `workers == 0` behaves like 1. The slice is only BORROWED, so use scoped threads (`std::thread::scope`).",
+        signatures: ["pub fn parallel_sum(data: &[u64], workers: usize) -> u64"],
+        starter_code: "// Write `parallel_sum` here. Hint: std::thread::scope lets threads borrow local data.\n",
+        hidden_tests: r##"
+#[test]
+fn small_inputs() {
+    assert_eq!(parallel_sum(&[], 4), 0);
+    assert_eq!(parallel_sum(&[5], 4), 5);
+    assert_eq!(parallel_sum(&[1, 2, 3, 4, 5], 2), 15);
+}
+
+#[test]
+fn any_worker_count_gives_the_same_answer() {
+    let data: Vec<u64> = (1..=1000).collect();
+    for workers in [0, 1, 3, 4, 7, 16] {
+        assert_eq!(parallel_sum(&data, workers), 500_500, "workers = {workers}");
+    }
+}
+
+#[test]
+fn more_workers_than_items_is_fine() {
+    let data: Vec<u64> = (1..=50).collect();
+    for workers in [50, 64, 5000] {
+        assert_eq!(parallel_sum(&data, workers), 1275, "workers = {workers}");
+    }
+}
+
+#[test]
+fn a_million_numbers() {
+    let data: Vec<u64> = (1..=1_000_000).collect();
+    assert_eq!(parallel_sum(&data, 4), 500_000_500_000);
+}
+"##,
+        hints: [
+            "`thread::spawn` needs `'static` data, which a borrowed slice is not. `thread::scope(|s| { … })` lets threads spawned with `s.spawn(…)` borrow from the enclosing function, and joins them all before returning.",
+            "Use `data.chunks(size)` to split the slice, where `size` is `len / workers` rounded UP (and at least 1). Spawn one scoped thread per chunk, then add up the results of `handle.join()`.",
+            "use std::thread;\n\npub fn parallel_sum(data: &[u64], workers: usize) -> u64 {\n    let workers = workers.max(1);\n    let size = data.len().div_ceil(workers).max(1);\n    thread::scope(|s| {\n        let handles: Vec<_> = data\n            .chunks(size)\n            .map(|chunk| s.spawn(move || chunk.iter().sum::<u64>()))\n            .collect();\n        handles.into_iter().map(|h| h.join().expect(\"worker panicked\")).sum()\n    })\n}",
+        ],
+        solution: r##"use std::thread;
+
+pub fn parallel_sum(data: &[u64], workers: usize) -> u64 {
+    let workers = workers.max(1);
+    let size = data.len().div_ceil(workers).max(1);
+    thread::scope(|s| {
+        let handles: Vec<_> = data
+            .chunks(size)
+            .map(|chunk| s.spawn(move || chunk.iter().sum::<u64>()))
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("worker panicked"))
+            .sum()
+    })
+}
+"##,
+        explanation: "Scoped threads (`std::thread::scope`) guarantee that every thread spawned inside the scope has finished before the scope ends, so those threads can safely BORROW local data — no `Arc`, no copying, no `'static`. Splitting a slice with `chunks` gives each thread its own disjoint piece, which is why no locking is needed: shared *immutable* access is always safe, and separate chunks never overlap. This divide-and-combine pattern is the core of data-parallel code.",
+        book_links: [
+            (title: "The Rust Book: Using Threads to Run Code Simultaneously", url: "https://doc.rust-lang.org/book/ch16-01-threads.html"),
+            (title: "std docs: thread::scope", url: "https://doc.rust-lang.org/std/thread/fn.scope.html"),
+        ],
+        prerequisites: ["concurrency_02_rc_to_arc"],
+        engine_tags: ["jobs", "performance"],
+    ),
+    (
+        id: "concurrency_04_predict_channel",
+        topic: "concurrency",
+        kind: PredictOutput,
+        difficulty: 3,
+        title: "Messages From the Producer",
+        story: "A producer thread sends three damage numbers to the main thread through a channel. Predict the console output, line by line.",
+        task: "What does this program print?",
+        explanation: "The producer sends 10, 20 and 30 (they wait in the channel's buffer), prints \"producer done\", and finishes. `join()` waits for that — so \"producer done\" appears before anything from the receiver. The thread owned `tx` (it was moved in), so when the thread ends the sender is dropped and the channel closes. That is what makes `for v in rx` stop after the third message instead of waiting forever.",
+        solution: "producer done\ngot 10\ngot 20\ngot 30",
+        book_links: [
+            (title: "The Rust Book: Using Message Passing to Transfer Data Between Threads", url: "https://doc.rust-lang.org/book/ch16-02-message-passing.html"),
+            (title: "Rust by Example: Channels", url: "https://doc.rust-lang.org/rust-by-example/std_misc/channels.html"),
+        ],
+        prerequisites: ["concurrency_03_parallel_sum"],
+        engine_tags: ["jobs", "networking"],
+        quiz: Some((
+            question: "What does this program print?",
+            code: r##"use std::sync::mpsc;
+use std::thread;
+
+fn main() {
+    let (tx, rx) = mpsc::channel();
+    let producer = thread::spawn(move || {
+        for i in 1..=3 {
+            tx.send(i * 10).unwrap();
+        }
+        println!("producer done");
+    });
+    producer.join().unwrap();
+    for v in rx {
+        println!("got {}", v);
+    }
+}"##,
+            options: [
+                "producer done\ngot 10\ngot 20\ngot 30",
+                "got 10\ngot 20\ngot 30\nproducer done",
+                "got 10\nproducer done\ngot 20\ngot 30",
+                "producer done\ngot 10\ngot 20\ngot 30\n(then it hangs forever waiting for more messages)",
+            ],
+            correct: 0,
+            verify: RunOutput,
+        )),
+    ),
+    (
+        id: "concurrency_05_review_send",
+        topic: "concurrency",
+        kind: CodeReview,
+        difficulty: 3,
+        title: "Review: Safe to Send?",
+        story: "Four snippets move data into worker threads. Only three of them respect Rust's thread-safety rules.",
+        task: "Which snippet does NOT compile?",
+        explanation: "Moving a value into a thread requires it to be `Send`. A `Vec<i32>`, an `Arc<Mutex<_>>` and a channel `Sender` are all safe to move between threads. `Rc` is not: its reference count is non-atomic, so two threads touching clones of the same `Rc` could corrupt it. The compiler rejects the closure with \"`Rc<i32>` cannot be sent between threads safely\". Swap in `Arc` and it compiles.",
+        solution: "Option B: `Rc<i32>` is not `Send`, so it cannot be moved into a spawned thread. Use `Arc`.",
+        book_links: [
+            (title: "The Rust Book: Extensible Concurrency with the Sync and Send Traits", url: "https://doc.rust-lang.org/book/ch16-04-extensible-concurrency-sync-and-send.html"),
+        ],
+        prerequisites: ["concurrency_04_predict_channel"],
+        engine_tags: ["jobs"],
+        quiz: Some((
+            question: "Which snippet does NOT compile?",
+            code: "",
+            options_are_code: true,
+            options: [
+                "let v = vec![1, 2, 3];\nlet h = thread::spawn(move || v.len());\nh.join().unwrap();",
+                "let v = Rc::new(5);\nlet h = thread::spawn(move || println!(\"{}\", v));\nh.join().unwrap();",
+                "let v = Arc::new(Mutex::new(0));\nlet v2 = Arc::clone(&v);\nthread::spawn(move || *v2.lock().unwrap() += 1)\n    .join()\n    .unwrap();",
+                "let (tx, rx) = mpsc::channel();\nthread::spawn(move || tx.send(1).unwrap());\nprintln!(\"{}\", rx.recv().unwrap());",
+            ],
+            correct: 1,
+            verify: OnlyCorrectFailsToCompile,
+            wrapper: "use std::rc::Rc;\nuse std::sync::{mpsc, Arc, Mutex};\nuse std::thread;\n\nfn main() {\n{CODE}\n}\n",
+        )),
+    ),
+]

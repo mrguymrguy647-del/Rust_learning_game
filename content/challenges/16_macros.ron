@@ -1,0 +1,248 @@
+// Topic 16: Declarative Macros — "Engine DSL / scripting"
+[
+    (
+        id: "macros_01_define_before_use",
+        topic: "macros",
+        kind: FixCompile,
+        difficulty: 2,
+        title: "The Macro That Wasn't There",
+        story: "A HUD helper macro formats numbers with their unit. The function using it compiles on its own, but the whole file does not — and the macro is clearly defined right there.",
+        task: "Fix the compile error so `describe(5)` returns `\"5 HP\"`.",
+        signatures: ["pub fn describe(hp: u32) -> String"],
+        starter_code: r##"pub fn describe(hp: u32) -> String {
+    label!(hp, "HP")
+}
+
+macro_rules! label {
+    ($value:expr, $unit:expr) => {
+        format!("{} {}", $value, $unit)
+    };
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn formats_value_and_unit() {
+    assert_eq!(describe(5), "5 HP");
+    assert_eq!(describe(0), "0 HP");
+}
+"##,
+        hints: [
+            "Unlike functions, `macro_rules!` macros are only visible AFTER the point where they are defined (textual order). The compiler reads the file top to bottom.",
+            "Move the whole `macro_rules! label { … }` definition above the function that uses it.",
+            "macro_rules! label { … }   // first\n\npub fn describe(hp: u32) -> String {\n    label!(hp, \"HP\")\n}",
+        ],
+        solution: r##"macro_rules! label {
+    ($value:expr, $unit:expr) => {
+        format!("{} {}", $value, $unit)
+    };
+}
+
+pub fn describe(hp: u32) -> String {
+    label!(hp, "HP")
+}
+"##,
+        explanation: "Macros are expanded early, while the compiler is still reading the file, so `macro_rules!` definitions follow TEXTUAL scope: a macro can be used only below its definition (and inside modules declared below it). Functions, structs and traits have no such restriction because they are resolved later. Put macro definitions at the top of the file (or in a module marked `#[macro_use]`, or export them with `#[macro_export]`).",
+        book_links: [
+            (title: "The Rust Book: Macros — Declarative Macros with macro_rules!", url: "https://doc.rust-lang.org/book/ch20-05-macros.html"),
+            (title: "Rust by Example: macro_rules!", url: "https://doc.rust-lang.org/rust-by-example/macros.html"),
+        ],
+        prerequisites: [],
+        engine_tags: ["scripting"],
+    ),
+    (
+        id: "macros_02_strings_macro",
+        topic: "macros",
+        kind: FromScratch,
+        difficulty: 3,
+        title: "A vec! for Strings",
+        story: "Level designers write lists of dialogue lines constantly, and `vec![\"a\".to_string(), \"b\".to_string(), …]` is tiresome. They want `strings![\"a\", \"b\"]`.",
+        task: "Write a `macro_rules!` macro `strings!` that turns a comma-separated list of expressions into a `Vec<String>` (converting each with `.to_string()`). It must accept an empty list and an optional trailing comma.",
+        signatures: ["macro_rules! strings { … }"],
+        starter_code: "// Write the `strings!` macro here.\n",
+        hidden_tests: r##"
+#[test]
+fn builds_a_vec_of_strings() {
+    let v: Vec<String> = strings!["a", "b", "c"];
+    assert_eq!(v, vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+}
+
+#[test]
+fn empty_list_is_allowed() {
+    let v: Vec<String> = strings![];
+    assert!(v.is_empty());
+}
+
+#[test]
+fn trailing_comma_is_allowed() {
+    let v = strings!["x", "y",];
+    assert_eq!(v.len(), 2);
+    assert_eq!(v[1], "y");
+}
+
+#[test]
+fn accepts_arbitrary_expressions() {
+    let n = 3;
+    let v = strings!["go".repeat(2), n, 1 + 1];
+    assert_eq!(v, vec!["gogo".to_string(), "3".to_string(), "2".to_string()]);
+}
+"##,
+        hints: [
+            "A macro arm looks like `($($x:expr),* $(,)?) => { … }`. `$x:expr` matches an expression; `$( … ),*` repeats it separated by commas; `$(,)?` allows one optional trailing comma.",
+            "In the body repeat the same way: `$( $x.to_string() ),*` expands once per matched expression. Wrap the result with `vec![ … ]`.",
+            "macro_rules! strings {\n    ($($x:expr),* $(,)?) => {\n        vec![$($x.to_string()),*]\n    };\n}",
+        ],
+        solution: r##"macro_rules! strings {
+    ($($x:expr),* $(,)?) => {
+        vec![$($x.to_string()),*]
+    };
+}
+"##,
+        explanation: "A declarative macro is a list of pattern → template rules. Fragment specifiers such as `$x:expr` capture pieces of syntax; repetition `$( … ),*` matches zero or more comma-separated items and expands the template once per match; `$(,)?` makes a trailing comma optional. Because macros work on syntax, they can do things functions cannot — accept a variable number of arguments, or any type that has `.to_string()`.",
+        book_links: [
+            (title: "The Rust Book: Declarative Macros with macro_rules! for General Metaprogramming", url: "https://doc.rust-lang.org/book/ch20-05-macros.html"),
+            (title: "Rust by Example: Repeat", url: "https://doc.rust-lang.org/rust-by-example/macros/repeat.html"),
+        ],
+        prerequisites: ["macros_01_define_before_use"],
+        engine_tags: ["scripting", "dialogue"],
+    ),
+    (
+        id: "macros_03_recursive_max",
+        topic: "macros",
+        kind: Complete,
+        difficulty: 4,
+        title: "max_of!: Recursion in Macros",
+        story: "The AI scoring code compares three, four, sometimes seven candidate scores. `max_of!(a, b, c)` should work for any number of arguments — and must evaluate every argument exactly once, so side effects stay predictable.",
+        task: "Complete the macro: add a second arm that matches one expression followed by one or more others, and expands to the larger of the first and `max_of!` of the rest (recursion). Each argument must be evaluated only once.",
+        signatures: ["macro_rules! max_of { ($x:expr) => …; ($x:expr, $($rest:expr),+) => … }"],
+        starter_code: r##"/// `max_of!(a)` is `a`; `max_of!(a, b, c, …)` is the largest of them.
+macro_rules! max_of {
+    ($x:expr) => {
+        $x
+    };
+    // TODO: add an arm for two or more arguments (use recursion).
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn single_argument() {
+    assert_eq!(max_of!(5), 5);
+}
+
+#[test]
+fn several_arguments() {
+    assert_eq!(max_of!(3, 9, 2), 9);
+    assert_eq!(max_of!(4, 4), 4);
+    assert_eq!(max_of!(1.5, 0.5, 1.25), 1.5);
+    assert_eq!(max_of!(10, 2, 3, 4, 5, 6, 7), 10);
+}
+
+#[test]
+fn every_argument_is_evaluated_once() {
+    let mut calls = 0;
+    let mut next = || {
+        calls += 1;
+        calls
+    };
+    let biggest = max_of!(next(), next(), next());
+    assert_eq!(biggest, 3);
+    assert_eq!(calls, 3);
+}
+"##,
+        hints: [
+            "A second arm can look like `($x:expr, $($rest:expr),+) => { … }`: the first expression, then a comma, then one or more further expressions.",
+            "Bind values with `let` inside a block so each expression is evaluated once: `let a = $x; let b = max_of!($($rest),+);` then pick the larger. Note the double braces `{{ … }}` so the block is an expression.",
+            "($x:expr, $($rest:expr),+) => {{\n    let a = $x;\n    let b = max_of!($($rest),+);\n    if a > b { a } else { b }\n}};",
+        ],
+        solution: r##"/// `max_of!(a)` is `a`; `max_of!(a, b, c, …)` is the largest of them.
+macro_rules! max_of {
+    ($x:expr) => {
+        $x
+    };
+    ($x:expr, $($rest:expr),+) => {{
+        let a = $x;
+        let b = max_of!($($rest),+);
+        if a > b {
+            a
+        } else {
+            b
+        }
+    }};
+}
+"##,
+        explanation: "Macros may call themselves: each expansion peels one argument off the front and hands the rest to another `max_of!`, until only one remains and the first arm stops the recursion. Binding the pieces with `let` evaluates each argument exactly once — pasting `$x` into a comparison twice would run its side effects twice. The outer `{{ … }}` is the macro's braces plus an inner block, which makes the expansion a single expression.",
+        book_links: [
+            (title: "Rust by Example: Designators and Repeat", url: "https://doc.rust-lang.org/rust-by-example/macros/designators.html"),
+            (title: "The Little Book of Rust Macros", url: "https://veykril.github.io/tlborm/"),
+        ],
+        prerequisites: ["macros_02_strings_macro"],
+        engine_tags: ["scripting", "ai"],
+    ),
+    (
+        id: "macros_04_predict_expansion",
+        topic: "macros",
+        kind: PredictOutput,
+        difficulty: 3,
+        title: "Macros Are Not Text Substitution",
+        story: "A veteran from the C world is sure this macro will print 11 and 100 — that is what C's preprocessor would do. Does Rust agree?",
+        task: "What does this program print?",
+        explanation: "C macros paste TEXT, so `SQUARE(2 + 3)` becomes `2 + 3 * 2 + 3 = 11`. Rust macros work on the syntax tree: an `$x:expr` capture stays ONE expression, as if it were wrapped in parentheses. So `square!(2 + 3)` is `(2 + 3) * (2 + 3) = 25`. And `square!(10) / square!(2)` expands to two separate whole expressions: `(10 * 10) / (2 * 2) = 25`.",
+        solution: "25\n25",
+        book_links: [
+            (title: "The Rust Book: Macros", url: "https://doc.rust-lang.org/book/ch20-05-macros.html"),
+            (title: "Rust by Example: Designators", url: "https://doc.rust-lang.org/rust-by-example/macros/designators.html"),
+        ],
+        prerequisites: ["macros_03_recursive_max"],
+        engine_tags: ["scripting"],
+        quiz: Some((
+            question: "What does this program print?",
+            code: r##"macro_rules! square {
+    ($x:expr) => {
+        $x * $x
+    };
+}
+
+fn main() {
+    println!("{}", square!(2 + 3));
+    println!("{}", square!(10) / square!(2));
+}"##,
+            options: [
+                "25\n25",
+                "11\n100",
+                "25\n100",
+                "11\n25",
+            ],
+            correct: 0,
+            verify: RunOutput,
+        )),
+    ),
+    (
+        id: "macros_05_review_hygiene",
+        topic: "macros",
+        kind: CodeReview,
+        difficulty: 4,
+        title: "Review: Hygiene",
+        story: "Four little macros try to bump a counter or reuse a temporary. One of them breaks Rust's macro hygiene rules.",
+        task: "Which snippet does NOT compile?",
+        explanation: "Rust macros are hygienic: identifiers a macro creates or mentions in its body live in the macro's own \"syntax context\" and cannot silently capture (or be captured by) the caller's local variables. The macro `bump!()` mentions `count`, but the `count` in the macro body is NOT the caller's variable (E0425). The fix is to pass the variable in: `bump!(count)` with an `$counter:ident` parameter. The same hygiene is why `twice!` can use its own `tmp` without clashing with the caller's `tmp`.",
+        solution: "Option B: the macro body refers to `count`, a local of the caller. Hygiene hides it; pass it as an `$ident` argument instead.",
+        book_links: [
+            (title: "The Little Book of Rust Macros: Hygiene", url: "https://veykril.github.io/tlborm/decl-macros/minutiae/hygiene.html"),
+        ],
+        prerequisites: ["macros_04_predict_expansion"],
+        engine_tags: ["scripting"],
+        quiz: Some((
+            question: "Which snippet does NOT compile?",
+            code: "",
+            options_are_code: true,
+            options: [
+                "macro_rules! bump {\n    ($counter:ident) => {\n        $counter += 1;\n    };\n}\n\nfn demo() {\n    let mut count = 0;\n    bump!(count);\n    println!(\"{}\", count);\n}",
+                "macro_rules! bump {\n    () => {\n        count += 1;\n    };\n}\n\nfn demo() {\n    let mut count = 0;\n    bump!();\n    println!(\"{}\", count);\n}",
+                "macro_rules! square {\n    ($x:expr) => {\n        $x * $x\n    };\n}\n\nfn demo() {\n    println!(\"{}\", square!(1 + 2));\n}",
+                "macro_rules! twice {\n    ($x:expr) => {{\n        let tmp = $x;\n        tmp * 2\n    }};\n}\n\nfn demo() {\n    let tmp = 5;\n    println!(\"{}\", twice!(tmp + 1));\n}",
+            ],
+            correct: 1,
+            verify: OnlyCorrectFailsToCompile,
+            wrapper: "{CODE}\n\nfn main() {\n    demo();\n}\n",
+        )),
+    ),
+]

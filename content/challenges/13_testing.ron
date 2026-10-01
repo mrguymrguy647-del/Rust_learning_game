@@ -1,0 +1,250 @@
+// Topic 13: Testing & Docs — "QA department"
+[
+    (
+        id: "testing_01_clamp_with_tests",
+        topic: "testing",
+        kind: FromScratch,
+        difficulty: 2,
+        title: "Ship It With Tests",
+        story: "The new QA department has one rule: no function lands without a unit test beside it. Your first assignment is a health clamp for the damage system — and the tests that prove it.",
+        task: "Write `clamp_health(health, max)`, which keeps health between 0 and `max` (inclusive). ALSO add a `#[cfg(test)] mod tests` containing at least two `#[test]` functions that use `assert_eq!`.",
+        signatures: ["pub fn clamp_health(health: i32, max: i32) -> i32"],
+        starter_code: "// Write `clamp_health` and a tests module below it.\n",
+        hidden_tests: r##"
+#[test]
+fn values_inside_the_range_are_unchanged() {
+    assert_eq!(clamp_health(50, 100), 50);
+    assert_eq!(clamp_health(0, 100), 0);
+    assert_eq!(clamp_health(100, 100), 100);
+}
+
+#[test]
+fn too_high_is_capped_at_max() {
+    assert_eq!(clamp_health(150, 100), 100);
+}
+
+#[test]
+fn negative_health_becomes_zero() {
+    assert_eq!(clamp_health(-5, 100), 0);
+    assert_eq!(clamp_health(-5, 0), 0);
+}
+"##,
+        checks: [
+            RequireText(text: "#[cfg(test)]", message: "Put your tests in a `#[cfg(test)] mod tests { … }` module so they are only compiled for `cargo test`."),
+            RequireText(text: "#[test]", message: "Mark each test function with `#[test]`."),
+            RequireText(text: "assert_eq!", message: "Use `assert_eq!(actual, expected)` in your tests."),
+        ],
+        hints: [
+            "A test is an ordinary function with the `#[test]` attribute. It passes if it returns normally and fails if it panics — which is exactly what `assert_eq!` does when its two arguments differ.",
+            "Test modules usually start with `use super::*;` to bring the functions of the parent module into scope. Write one test for the normal case and one for each edge (negative and too-high values).",
+            "pub fn clamp_health(health: i32, max: i32) -> i32 {\n    health.clamp(0, max)\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn caps_at_max() {\n        assert_eq!(clamp_health(150, 100), 100);\n    }\n\n    #[test]\n    fn floors_at_zero() {\n        assert_eq!(clamp_health(-5, 100), 0);\n    }\n}",
+        ],
+        solution: r##"pub fn clamp_health(health: i32, max: i32) -> i32 {
+    health.clamp(0, max)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn caps_at_max() {
+        assert_eq!(clamp_health(150, 100), 100);
+    }
+
+    #[test]
+    fn floors_at_zero() {
+        assert_eq!(clamp_health(-5, 100), 0);
+    }
+
+    #[test]
+    fn leaves_valid_values_alone() {
+        assert_eq!(clamp_health(42, 100), 42);
+    }
+}
+"##,
+        explanation: "Rust has testing built in: `#[test]` functions run under `cargo test`, and `#[cfg(test)]` makes the whole `tests` module compile ONLY in test builds, so it adds nothing to your release binary. Unit tests live next to the code they check, in the same file, and can even test private functions through `use super::*;`. A good test targets the edges (0, max, out of range), not just the happy path.",
+        book_links: [
+            (title: "The Rust Book: How to Write Tests", url: "https://doc.rust-lang.org/book/ch11-01-writing-tests.html"),
+            (title: "Rust by Example: Unit testing", url: "https://doc.rust-lang.org/rust-by-example/testing/unit_testing.html"),
+        ],
+        prerequisites: [],
+        engine_tags: ["qa", "combat"],
+    ),
+    (
+        id: "testing_02_should_panic",
+        topic: "testing",
+        kind: Complete,
+        difficulty: 3,
+        title: "Panic On Purpose",
+        story: "A divide-by-zero in the frame-time statistics once crashed a build in front of a publisher. The fix is a function that fails LOUDLY and clearly on empty input — plus a test that makes sure it keeps doing so.",
+        task: "Implement `average_frame_time` (the mean of the values). On an empty slice it must panic with a message containing `no frames`. Then complete the test module with a `#[should_panic(expected = \"no frames\")]` test.",
+        signatures: ["pub fn average_frame_time(times: &[f64]) -> f64"],
+        starter_code: r##"/// Mean of the frame times in milliseconds.
+///
+/// # Panics
+/// Panics with the message "no frames" if `times` is empty.
+pub fn average_frame_time(times: &[f64]) -> f64 {
+    todo!()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn averages_values() {
+        assert_eq!(average_frame_time(&[10.0, 20.0, 30.0]), 20.0);
+    }
+
+    // TODO: add a test that expects the panic on an empty slice.
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn computes_the_mean() {
+    assert_eq!(average_frame_time(&[16.0, 17.0]), 16.5);
+    assert_eq!(average_frame_time(&[5.0]), 5.0);
+}
+
+#[test]
+#[should_panic(expected = "no frames")]
+fn empty_input_panics_with_a_clear_message() {
+    average_frame_time(&[]);
+}
+"##,
+        checks: [
+            RequireText(text: "#[should_panic", message: "Add a test marked `#[should_panic(expected = \"no frames\")]` that calls the function with an empty slice."),
+        ],
+        hints: [
+            "`assert!(condition, \"message\")` panics with your message when the condition is false. `slice.is_empty()` is the condition you want to check first.",
+            "`#[should_panic(expected = \"…\")]` marks a test that PASSES only if it panics AND the panic message contains the given text. Put it under `#[test]`.",
+            "pub fn average_frame_time(times: &[f64]) -> f64 {\n    assert!(!times.is_empty(), \"no frames\");\n    times.iter().sum::<f64>() / times.len() as f64\n}\n\n#[test]\n#[should_panic(expected = \"no frames\")]\nfn empty_panics() {\n    average_frame_time(&[]);\n}",
+        ],
+        solution: r##"/// Mean of the frame times in milliseconds.
+///
+/// # Panics
+/// Panics with the message "no frames" if `times` is empty.
+pub fn average_frame_time(times: &[f64]) -> f64 {
+    assert!(!times.is_empty(), "no frames");
+    times.iter().sum::<f64>() / times.len() as f64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn averages_values() {
+        assert_eq!(average_frame_time(&[10.0, 20.0, 30.0]), 20.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "no frames")]
+    fn empty_input_panics() {
+        average_frame_time(&[]);
+    }
+}
+"##,
+        explanation: "Some functions SHOULD fail on bad input, and that behaviour deserves a test too. `#[should_panic]` flips the verdict: the test passes only when the code panics; adding `expected = \"…\"` also checks the message, so an unrelated panic (an index out of bounds, say) cannot pass by accident. Document the contract with a `# Panics` section in the doc comment — it is the convention rustdoc readers look for.",
+        book_links: [
+            (title: "The Rust Book: Checking for Panics with should_panic", url: "https://doc.rust-lang.org/book/ch11-01-writing-tests.html"),
+            (title: "std docs: assert! macro", url: "https://doc.rust-lang.org/std/macro.assert.html"),
+        ],
+        prerequisites: ["testing_01_clamp_with_tests"],
+        engine_tags: ["qa", "performance"],
+    ),
+    (
+        id: "testing_03_result_test",
+        topic: "testing",
+        kind: FixCompile,
+        difficulty: 3,
+        title: "Tests That Return Results",
+        story: "Someone wanted to use `?` inside a unit test instead of sprinkling `unwrap()` everywhere, and changed the test to return a `Result`. Now `cargo test` will not even build.",
+        task: "Fix the compile error in the test module so it builds and passes. Keep the test returning a `Result`.",
+        signatures: ["pub fn parse_level(text: &str) -> Result<u32, std::num::ParseIntError>"],
+        starter_code: r##"pub fn parse_level(text: &str) -> Result<u32, std::num::ParseIntError> {
+    text.trim().parse()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_with_whitespace() -> Result<(), std::num::ParseIntError> {
+        let level = parse_level("  7 ")?;
+        assert_eq!(level, 7);
+    }
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn parses_numbers() {
+    assert_eq!(parse_level("12"), Ok(12));
+    assert_eq!(parse_level(" 3\n"), Ok(3));
+}
+
+#[test]
+fn rejects_garbage() {
+    assert!(parse_level("seven").is_err());
+    assert!(parse_level("-1").is_err());
+}
+"##,
+        hints: [
+            "Read the error: the test function promises to return `Result<(), …>`, but its body ends with a statement and so returns `()`.",
+            "A test that returns `Result` passes when it returns `Ok(())` and fails when it returns `Err`. The last expression of the function must be `Ok(())`.",
+            "    #[test]\n    fn parses_with_whitespace() -> Result<(), std::num::ParseIntError> {\n        let level = parse_level(\"  7 \")?;\n        assert_eq!(level, 7);\n        Ok(())\n    }",
+        ],
+        solution: r##"pub fn parse_level(text: &str) -> Result<u32, std::num::ParseIntError> {
+    text.trim().parse()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_with_whitespace() -> Result<(), std::num::ParseIntError> {
+        let level = parse_level("  7 ")?;
+        assert_eq!(level, 7);
+        Ok(())
+    }
+}
+"##,
+        explanation: "A test function may return `Result<(), E>`: it passes on `Ok(())` and fails on `Err(e)` (the error is printed). That lets you use `?` in tests instead of `unwrap()`, which gives much nicer failure messages — the real error rather than \"called `Result::unwrap()` on an `Err` value\". Remember the final `Ok(())`; without it the function body evaluates to `()` and the types no longer match (E0308).",
+        book_links: [
+            (title: "The Rust Book: Using Result<T, E> in Tests", url: "https://doc.rust-lang.org/book/ch11-01-writing-tests.html"),
+        ],
+        prerequisites: ["testing_02_should_panic"],
+        engine_tags: ["qa", "parsing"],
+    ),
+    (
+        id: "testing_04_review_useless_test",
+        topic: "testing",
+        kind: CodeReview,
+        difficulty: 2,
+        title: "Review: The Test That Cannot Fail",
+        story: "A teammate added four unit tests for `apply_damage`. Code coverage went up, but you suspect one of them would stay green even if the function were completely broken.",
+        task: "Which test is useless — it would still PASS if `apply_damage` returned a wrong value?",
+        explanation: "A test is only worth something if it can fail. `runs` calls the function but never checks the result — it only proves the code does not panic, so it would pass for ANY return value. The other tests assert on concrete expected results (a normal hit, clamping at zero, an exact kill). Always assert something, and prefer expectations you worked out by hand rather than copying the function's own output.",
+        solution: "Option C: `runs` never asserts anything about the result, so it passes whatever `apply_damage` returns.",
+        book_links: [
+            (title: "The Rust Book: Checking Results with the assert! Macro", url: "https://doc.rust-lang.org/book/ch11-01-writing-tests.html"),
+        ],
+        prerequisites: ["testing_03_result_test"],
+        engine_tags: ["qa"],
+        quiz: Some((
+            question: "Which test is useless — it would still PASS if `apply_damage` returned a wrong value?",
+            code: "pub fn apply_damage(hp: u32, damage: u32) -> u32 {\n    hp.saturating_sub(damage)\n}",
+            options_are_code: true,
+            options: [
+                "#[test]\nfn survives_a_hit() {\n    assert_eq!(apply_damage(10, 3), 7);\n}",
+                "#[test]\nfn floors_at_zero() {\n    assert_eq!(apply_damage(5, 50), 0);\n}",
+                "#[test]\nfn runs() {\n    let _ = apply_damage(10, 3);\n}",
+                "#[test]\nfn exact_kill() {\n    assert_eq!(apply_damage(8, 8), 0);\n}",
+            ],
+            correct: 2,
+        )),
+    ),
+]
