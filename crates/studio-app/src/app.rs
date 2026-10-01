@@ -1,16 +1,19 @@
 //! Application state and the top-level screen router.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
 use eframe::egui::{self, RichText};
-use studio_core::data::ContentLibrary;
+use studio_core::challenges::{Runner, RunnerConfig, Toolchain, ToolchainError};
+use studio_core::data::{ChallengeKind, ContentLibrary};
 use studio_core::fmt;
 use studio_core::paths::AppPaths;
 use studio_core::save::{self, SlotInfo, AUTOSAVE_SLOT};
 use studio_core::settings::{Difficulty, Settings};
-use studio_core::sim::GameState;
+use studio_core::sim::{Attempt, ChallengeContext, GameState};
 
+use crate::screens::challenge::ChallengeView;
 use crate::theme::{self, Palette};
 use crate::widgets;
 
@@ -107,6 +110,13 @@ pub struct Toast {
     pub age: f32,
 }
 
+/// State of the Rust toolchain used to check challenge code.
+pub enum ToolchainStatus {
+    Detecting,
+    Ready(Arc<Runner>),
+    Missing(ToolchainError),
+}
+
 pub struct NewGameForm {
     pub studio: String,
     pub founder: String,
@@ -128,6 +138,16 @@ pub struct App {
     pub confirm_delete: Option<String>,
     pub confirm_exit_to_title: bool,
     pub current_slot: Option<String>,
+    pub toolchain: ToolchainStatus,
+    pub challenge: Option<ChallengeView>,
+    pub practice_filter: Option<ChallengeKind>,
+    /// Egui context, captured on the first frame so background threads can request repaints.
+    pub egui_ctx: Option<egui::Context>,
+    /// Unsubmitted code of challenges the player walked away from.
+    drafts: HashMap<String, String>,
+    /// Developer aid (`--dev-screen challenge:<id>:solution`): submit once the toolchain is ready.
+    dev_auto_submit: Option<bool>,
+    toolchain_rx: Option<mpsc::Receiver<Result<Arc<Runner>, ToolchainError>>>,
     time_acc: f32,
     weeks_since_autosave: u32,
     settings_dirty: bool,
@@ -142,7 +162,7 @@ impl App {
             difficulty: settings.default_difficulty,
         };
         let slots = save::list_slots(&paths);
-        App {
+        let mut app = App {
             paths,
             settings,
             content,
@@ -157,10 +177,93 @@ impl App {
             confirm_delete: None,
             confirm_exit_to_title: false,
             current_slot: None,
+            toolchain: ToolchainStatus::Detecting,
+            challenge: None,
+            practice_filter: None,
+            egui_ctx: None,
+            drafts: HashMap::new(),
+            dev_auto_submit: None,
+            toolchain_rx: None,
             time_acc: 0.0,
             weeks_since_autosave: 0,
             settings_dirty: false,
             applied_theme: None,
+        };
+        app.redetect_toolchain();
+        app
+    }
+
+    /// Look for cargo on a background thread; on success pre-build the sandbox so the first
+    /// real check is fast.
+    pub fn redetect_toolchain(&mut self) {
+        self.toolchain = ToolchainStatus::Detecting;
+        let (tx, rx) = mpsc::channel();
+        self.toolchain_rx = Some(rx);
+        let sandbox_root = self.paths.sandbox_dir();
+        let config = RunnerConfig::from_settings(&self.settings);
+        let ctx = self.egui_ctx.clone();
+        std::thread::spawn(move || {
+            let result = Toolchain::detect().map(|tc| Arc::new(Runner::new(tc, &sandbox_root, 0, config)));
+            let warm = result.as_ref().ok().cloned();
+            let _ = tx.send(result);
+            if let Some(ctx) = &ctx {
+                ctx.request_repaint();
+            }
+            if let Some(runner) = warm {
+                runner.warm_up();
+            }
+        });
+    }
+
+    fn poll_toolchain(&mut self) {
+        let Some(rx) = &self.toolchain_rx else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(Ok(runner)) => {
+                self.toolchain = ToolchainStatus::Ready(runner);
+                self.toolchain_rx = None;
+            }
+            Ok(Err(err)) => {
+                self.toolchain = ToolchainStatus::Missing(err);
+                self.toolchain_rx = None;
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.toolchain =
+                    ToolchainStatus::Missing(ToolchainError::Broken("detection thread died".into()));
+                self.toolchain_rx = None;
+            }
+        }
+    }
+
+    /// Open a challenge. Blocking contexts resume a saved attempt if there is one.
+    pub fn open_challenge(&mut self, id: &str, context: ChallengeContext) {
+        let Some(challenge) = self.content.challenge(id).cloned() else {
+            self.toast(ToastKind::Bad, format!("Unknown challenge `{id}`"));
+            return;
+        };
+        let resumed = self
+            .game
+            .as_ref()
+            .and_then(|g| g.pending_attempt.clone())
+            .filter(|a| a.challenge_id == id && a.context == context);
+        let mut attempt = resumed.unwrap_or_else(|| Attempt::new(&challenge, context));
+        if let Some(draft) = self.drafts.get(id) {
+            if attempt.submissions == 0 {
+                attempt.code = draft.clone();
+            }
+        }
+        self.challenge = Some(ChallengeView::new(challenge, attempt, self.nav));
+        self.speed = Speed::Paused;
+    }
+
+    /// Remember what the player typed so leaving and coming back does not lose it.
+    pub fn stash_draft(&mut self, id: &str, code: &str, solved: bool) {
+        if solved {
+            self.drafts.remove(id);
+        } else {
+            self.drafts.insert(id.to_string(), code.to_string());
         }
     }
 
@@ -182,6 +285,14 @@ impl App {
     /// Called once per frame by the eframe adapter.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        if self.egui_ctx.is_none() {
+            self.egui_ctx = Some(ctx.clone());
+        }
+        self.poll_toolchain();
+        if let (Some(use_solution), ToolchainStatus::Ready(_)) = (self.dev_auto_submit, &self.toolchain) {
+            self.dev_auto_submit = None;
+            crate::screens::challenge::dev_submit(self, use_solution);
+        }
         self.apply_theme_if_changed(&ctx);
 
         match self.view {
@@ -214,6 +325,18 @@ impl App {
                 self.start_new_game();
                 if let Some(nav) = Nav::ALL.iter().find(|n| n.label().eq_ignore_ascii_case(tail)) {
                     self.nav = *nav;
+                }
+            }
+            "challenge" => {
+                self.new_game.studio = "Ferris Games".into();
+                self.start_new_game();
+                let mut parts = tail.split(':');
+                let id = parts.next().unwrap_or_default().to_string();
+                self.open_challenge(&id, ChallengeContext::Study);
+                match parts.next() {
+                    Some("solution") => self.dev_auto_submit = Some(true),
+                    Some("starter") => self.dev_auto_submit = Some(false),
+                    _ => {}
                 }
             }
             _ => {}
@@ -277,6 +400,9 @@ impl App {
                 self.settings.last_slot = Some(slot.to_string());
                 self.mark_settings_dirty();
                 self.toast(ToastKind::Good, "Game loaded");
+                if let Some(a) = self.game.as_ref().and_then(|g| g.pending_attempt.clone()) {
+                    self.open_challenge(&a.challenge_id, a.context);
+                }
             }
             Err(err) => self.toast(ToastKind::Bad, format!("Could not load: {err}")),
         }
@@ -320,7 +446,7 @@ impl App {
     // ----- clock -----------------------------------------------------------------------
 
     fn tick_clock(&mut self, ui: &egui::Ui) {
-        if self.speed == Speed::Paused || self.game.is_none() {
+        if self.speed == Speed::Paused || self.game.is_none() || self.challenge.is_some() {
             return;
         }
         let dt = ui.input(|i| i.stable_dt).min(0.25);
@@ -347,6 +473,10 @@ impl App {
     // ----- in-game shell -----------------------------------------------------------------
 
     fn show_game(&mut self, ui: &mut egui::Ui) {
+        if self.challenge.is_some() {
+            crate::screens::challenge::show(self, ui);
+            return;
+        }
         let pal = Palette::of(ui);
 
         egui::Panel::top("top_bar").show(ui, |ui| {
@@ -365,6 +495,8 @@ impl App {
         egui::CentralPanel::default_margins().show(ui, |ui| {
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| match self.nav {
                 Nav::Dashboard => crate::screens::dashboard::show(self, ui),
+                Nav::Skills => crate::screens::skills::show(self, ui),
+                Nav::Practice => crate::screens::practice::show(self, ui),
                 Nav::Settings => crate::screens::settings::show(self, ui),
                 other => crate::screens::placeholder::show(self, ui, other),
             });
@@ -558,16 +690,18 @@ pub fn slot_title(slot: &str) -> String {
     }
 }
 
+/// An app with its own temp data dir, for tests in any module.
+#[cfg(test)]
+pub fn test_app(name: &str) -> App {
+    let dir = std::env::temp_dir().join(format!("rst_app_{name}_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let paths = AppPaths::at(dir);
+    App::new(paths, Settings::default(), Arc::new(ContentLibrary::embedded()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn test_app(name: &str) -> App {
-        let dir = std::env::temp_dir().join(format!("rst_app_{name}_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        let paths = AppPaths::at(dir);
-        App::new(paths, Settings::default(), Arc::new(ContentLibrary::embedded()))
-    }
 
     /// Run `frames` headless egui passes.
     fn run_frames(app: &mut App, frames: usize) {
@@ -602,6 +736,15 @@ mod tests {
         run_frames(&mut app, 2);
         app.confirm_exit_to_title = true;
         run_frames(&mut app, 2);
+        app.confirm_exit_to_title = false;
+
+        // Every challenge (code and quiz) must be displayable.
+        let ids: Vec<String> = app.content.challenges.iter().map(|c| c.id.clone()).collect();
+        for id in ids {
+            app.open_challenge(&id, ChallengeContext::Study);
+            run_frames(&mut app, 2);
+            app.challenge = None;
+        }
         let _ = std::fs::remove_dir_all(app.paths.root());
     }
 

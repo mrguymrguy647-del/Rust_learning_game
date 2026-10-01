@@ -1,0 +1,230 @@
+// Topic 1: Basics — "Game loop & score counter"
+[
+    (
+        id: "basics_01_score_counter",
+        topic: "basics",
+        kind: Complete,
+        difficulty: 1,
+        title: "Keep the Score",
+        story: "Your first game, Pixel Pong, is almost playable! But the score counter never changes, and the game announces a new high score on every single point. Players are confused. (So are you.)",
+        task: "Complete both functions. `add_points` returns the score after adding `points`. `is_high_score` returns `true` only when `score` is strictly greater than `best`.",
+        signatures: [
+            "pub fn add_points(score: u32, points: u32) -> u32",
+            "pub fn is_high_score(score: u32, best: u32) -> bool",
+        ],
+        starter_code: r##"// Pixel Pong: score keeping.
+
+pub fn add_points(score: u32, points: u32) -> u32 {
+    // TODO: return the new score
+    todo!()
+}
+
+pub fn is_high_score(score: u32, best: u32) -> bool {
+    // TODO: true only if `score` beats `best`
+    todo!()
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn adding_points_increases_score() {
+    assert_eq!(add_points(10, 5), 15);
+    assert_eq!(add_points(0, 0), 0);
+}
+
+#[test]
+fn big_scores_work() {
+    assert_eq!(add_points(4_000_000_000, 200_000_000), 4_200_000_000);
+}
+
+#[test]
+fn a_tie_is_not_a_high_score() {
+    assert!(is_high_score(11, 10));
+    assert!(!is_high_score(10, 10));
+    assert!(!is_high_score(3, 10));
+}
+"##,
+        hints: [
+            "In Rust the last expression in a function body — written WITHOUT a trailing semicolon — becomes the return value. You don't need the `return` keyword.",
+            "`score + points` is an expression that produces a `u32`. Comparison operators such as `>` produce a `bool`, so `score > best` can be the whole body of the second function.",
+            "pub fn add_points(score: u32, points: u32) -> u32 {\n    score + points\n}\n\npub fn is_high_score(score: u32, best: u32) -> bool {\n    // compare with a strict `>`\n}",
+        ],
+        solution: r##"pub fn add_points(score: u32, points: u32) -> u32 {
+    score + points
+}
+
+pub fn is_high_score(score: u32, best: u32) -> bool {
+    score > best
+}
+"##,
+        explanation: "Rust is an expression-oriented language: a block's final expression (no semicolon) is its value, so a function body can simply be `score + points`. Adding a semicolon would turn it into a statement and the function would return `()`, which is a type error. Comparison operators return `bool`, and `>` is strict, so a tie is not a high score.",
+        book_links: [
+            (title: "The Rust Book: Functions", url: "https://doc.rust-lang.org/book/ch03-03-how-functions-work.html"),
+            (title: "Rust by Example: Functions", url: "https://doc.rust-lang.org/rust-by-example/fn.html"),
+        ],
+        prerequisites: [],
+        engine_tags: ["core_loop"],
+    ),
+    (
+        id: "basics_02_mutable_lives",
+        topic: "basics",
+        kind: FixCompile,
+        difficulty: 1,
+        title: "Lives Don't Change?",
+        story: "Pixel Pong players start with three lives and lose one every time they miss the ball. Your build fails with a confusing complaint about assigning twice to a variable.",
+        task: "Fix the compile error so `lives_after_misses` returns the remaining lives (never below zero).",
+        signatures: ["pub fn lives_after_misses(misses: u32) -> i32"],
+        starter_code: r##"pub fn lives_after_misses(misses: u32) -> i32 {
+    let lives: i32 = 3;
+    for _ in 0..misses {
+        lives -= 1;
+    }
+    lives.max(0)
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn no_misses_keeps_all_lives() {
+    assert_eq!(lives_after_misses(0), 3);
+}
+
+#[test]
+fn each_miss_costs_a_life() {
+    assert_eq!(lives_after_misses(1), 2);
+    assert_eq!(lives_after_misses(2), 1);
+}
+
+#[test]
+fn lives_never_go_negative() {
+    assert_eq!(lives_after_misses(3), 0);
+    assert_eq!(lives_after_misses(10), 0);
+}
+"##,
+        hints: [
+            "Variables in Rust are immutable by default. The compiler is telling you that you tried to change a variable that was not declared as changeable.",
+            "Put the keyword `mut` right after `let` for any variable you intend to modify.",
+            "    let mut lives: i32 = 3;",
+        ],
+        solution: r##"pub fn lives_after_misses(misses: u32) -> i32 {
+    let mut lives: i32 = 3;
+    for _ in 0..misses {
+        lives -= 1;
+    }
+    lives.max(0)
+}
+"##,
+        explanation: "`let` bindings are immutable unless you write `let mut`. This default makes it obvious when reading code which values can change. The compiler error E0384 (\"cannot assign twice to immutable variable\") is Rust protecting you: if you meant to change `lives`, say so with `mut`.",
+        book_links: [
+            (title: "The Rust Book: Variables and Mutability", url: "https://doc.rust-lang.org/book/ch03-01-variables-and-mutability.html"),
+        ],
+        prerequisites: ["basics_01_score_counter"],
+        engine_tags: ["core_loop"],
+    ),
+    (
+        id: "basics_03_predict_shadowing",
+        topic: "basics",
+        kind: PredictOutput,
+        difficulty: 2,
+        title: "Shadow Score",
+        story: "A teammate pushed a debug overlay for the score display and left without explaining it. Before you merge it, make sure you know what it prints.",
+        task: "What does this program print?",
+        explanation: "`let score = score * 2;` creates a NEW variable that shadows the old one (it is not mutation). Inside the inner block another `score` shadows it again with the value 25, but that variable disappears at the closing brace — the outer `score` is still 20.",
+        solution: "inner: 25\nouter: 20",
+        book_links: [
+            (title: "The Rust Book: Shadowing", url: "https://doc.rust-lang.org/book/ch03-01-variables-and-mutability.html"),
+        ],
+        prerequisites: ["basics_02_mutable_lives"],
+        engine_tags: ["core_loop"],
+        quiz: Some((
+            question: "What does this program print?",
+            code: r##"fn main() {
+    let score = 10;
+    let score = score * 2;
+    {
+        let score = score + 5;
+        println!("inner: {score}");
+    }
+    println!("outer: {score}");
+}"##,
+            options: [
+                "inner: 25\nouter: 20",
+                "inner: 25\nouter: 25",
+                "inner: 15\nouter: 20",
+                "It does not compile: `score` is declared three times",
+            ],
+            correct: 0,
+        )),
+    ),
+    (
+        id: "basics_04_refactor_clamp",
+        topic: "basics",
+        kind: Refactor,
+        difficulty: 2,
+        title: "Tidy the Health Bar",
+        story: "The health bar code works, but a code reviewer left a comment: \"This reads like C from 1995. Rust has expressions and standard library helpers — use them.\"",
+        task: "Refactor both functions without changing behaviour. Do not use the `return` keyword (let the last expression be the result), use `.clamp(...)` in `clamp_health` and `.min(...)` in `heal`.",
+        signatures: [
+            "pub fn clamp_health(hp: i32, max: i32) -> i32",
+            "pub fn heal(hp: i32, amount: i32, max: i32) -> i32",
+        ],
+        starter_code: r##"pub fn clamp_health(hp: i32, max: i32) -> i32 {
+    if hp < 0 {
+        return 0;
+    } else if hp > max {
+        return max;
+    } else {
+        return hp;
+    }
+}
+
+pub fn heal(hp: i32, amount: i32, max: i32) -> i32 {
+    let mut result = hp + amount;
+    if result > max {
+        result = max;
+    }
+    return result;
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn clamp_keeps_values_in_range() {
+    assert_eq!(clamp_health(-5, 100), 0);
+    assert_eq!(clamp_health(50, 100), 50);
+    assert_eq!(clamp_health(150, 100), 100);
+    assert_eq!(clamp_health(0, 100), 0);
+    assert_eq!(clamp_health(100, 100), 100);
+}
+
+#[test]
+fn heal_never_exceeds_max() {
+    assert_eq!(heal(40, 30, 100), 70);
+    assert_eq!(heal(90, 30, 100), 100);
+    assert_eq!(heal(100, 1, 100), 100);
+}
+"##,
+        checks: [
+            ForbidWord(word: "return", message: "Remove the `return` keyword: end each function with an expression instead."),
+            RequireText(text: ".clamp(", message: "Use `i32::clamp` in clamp_health."),
+            RequireText(text: ".min(", message: "Use `.min(...)` in heal."),
+        ],
+        hints: [
+            "A function's last expression (no semicolon) is returned automatically. Even `if … else …` is an expression that produces a value.",
+            "Integers have helper methods: `value.clamp(low, high)` limits a value to a range and `a.min(b)` returns the smaller of two numbers.",
+            "pub fn clamp_health(hp: i32, max: i32) -> i32 {\n    hp.clamp(0, max)\n}\n\npub fn heal(hp: i32, amount: i32, max: i32) -> i32 {\n    // (hp + amount) limited to `max`\n}",
+        ],
+        solution: r##"pub fn clamp_health(hp: i32, max: i32) -> i32 {
+    hp.clamp(0, max)
+}
+
+pub fn heal(hp: i32, amount: i32, max: i32) -> i32 {
+    (hp + amount).min(max)
+}
+"##,
+        explanation: "Idiomatic Rust leans on expressions and the standard library. `clamp` and `min` say what you mean in one line, leave no room for off-by-one mistakes, and the missing `return` shows that the function body is simply a value.",
+        book_links: [
+            (title: "The Rust Book: Functions with Return Values", url: "https://doc.rust-lang.org/book/ch03-03-how-functions-work.html"),
+            (title: "The Rust Book: Control Flow", url: "https://doc.rust-lang.org/book/ch03-05-control-flow.html"),
+        ],
+        prerequisites: ["basics_03_predict_shadowing"],
+        engine_tags: ["core_loop"],
+    ),
+]

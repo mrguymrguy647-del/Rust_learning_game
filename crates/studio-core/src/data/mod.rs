@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use serde::de::DeserializeOwned;
 
 pub use challenge::{BookLink, Challenge, ChallengeKind, Check, Quiz, Rewards};
-pub use game::{CodexEntry, ErrorExplainer, Identified, TierDef, TopicDef};
+pub use game::{AchievementDef, CodexEntry, ErrorExplainer, Identified, TierDef, TopicDef};
 
 mod embedded {
     include!(concat!(env!("OUT_DIR"), "/embedded_content.rs"));
@@ -52,8 +52,12 @@ pub struct ContentLibrary {
     pub challenges: Vec<Challenge>,
     pub codex: Vec<CodexEntry>,
     pub error_explainers: Vec<ErrorExplainer>,
+    pub achievements: Vec<AchievementDef>,
     /// Files that failed to parse. Embedded content must have none (a unit test enforces it).
     pub issues: Vec<ContentIssue>,
+    /// `id (file)` of entries that replaced an earlier entry with the same id. Expected for
+    /// user overrides; for built-in content a unit test requires this to be empty.
+    pub overrides: Vec<String>,
     challenge_index: HashMap<String, usize>,
 }
 
@@ -99,16 +103,21 @@ impl ContentLibrary {
     fn ingest(&mut self, src: &SourceFile) {
         let dir = src.path.split('/').next().unwrap_or_default();
         let file = src.path.rsplit('/').next().unwrap_or_default();
+        let mut replaced = Vec::new();
         match (dir, file) {
-            ("challenges", _) => merge_list(&mut self.challenges, parse(src, &mut self.issues)),
-            ("codex", _) => merge_list(&mut self.codex, parse(src, &mut self.issues)),
-            ("game", "topics.ron") => merge_list(&mut self.topics, parse(src, &mut self.issues)),
-            ("game", "tiers.ron") => merge_list(&mut self.tiers, parse(src, &mut self.issues)),
+            ("challenges", _) => replaced = merge_list(&mut self.challenges, parse(src, &mut self.issues)),
+            ("codex", _) => replaced = merge_list(&mut self.codex, parse(src, &mut self.issues)),
+            ("game", "topics.ron") => replaced = merge_list(&mut self.topics, parse(src, &mut self.issues)),
+            ("game", "tiers.ron") => replaced = merge_list(&mut self.tiers, parse(src, &mut self.issues)),
             ("game", "compiler_errors.ron") => {
-                merge_list(&mut self.error_explainers, parse(src, &mut self.issues))
+                replaced = merge_list(&mut self.error_explainers, parse(src, &mut self.issues))
+            }
+            ("game", "achievements.ron") => {
+                replaced = merge_list(&mut self.achievements, parse(src, &mut self.issues))
             }
             _ => {}
         }
+        self.overrides.extend(replaced.into_iter().map(|id| format!("{id} ({})", src.path)));
     }
 
     fn rebuild_indexes(&mut self) {
@@ -245,15 +254,18 @@ fn parse<T: DeserializeOwned>(src: &SourceFile, issues: &mut Vec<ContentIssue>) 
     }
 }
 
-/// Append `incoming`, replacing existing entries that share an id.
-fn merge_list<T: Identified>(target: &mut Vec<T>, incoming: Vec<T>) {
+/// Append `incoming`, replacing existing entries that share an id. Returns the replaced ids.
+fn merge_list<T: Identified>(target: &mut Vec<T>, incoming: Vec<T>) -> Vec<String> {
+    let mut replaced = Vec::new();
     for item in incoming {
         if let Some(slot) = target.iter_mut().find(|e| e.id() == item.id()) {
+            replaced.push(item.id().to_string());
             *slot = item;
         } else {
             target.push(item);
         }
     }
+    replaced
 }
 
 fn read_dir_sources(dir: &Path, root: &Path, out: &mut Vec<SourceFile>) {
@@ -301,7 +313,8 @@ mod tests {
         newer.title = "b".into();
         let mut other = list[0].clone();
         other.id = "E2".into();
-        merge_list(&mut list, vec![newer, other]);
+        let replaced = merge_list(&mut list, vec![newer, other]);
+        assert_eq!(replaced, vec!["E1".to_string()]);
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].title, "b");
     }
@@ -320,5 +333,6 @@ mod tests {
     fn embedded_content_parses_cleanly() {
         let lib = ContentLibrary::embedded();
         assert!(lib.issues.is_empty(), "content issues: {:#?}", lib.issues);
+        assert!(lib.overrides.is_empty(), "duplicate ids in built-in content: {:#?}", lib.overrides);
     }
 }

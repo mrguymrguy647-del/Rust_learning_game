@@ -1,0 +1,158 @@
+// Topic 2: Ownership — "Asset manager"
+[
+    (
+        id: "ownership_01_asset_move",
+        topic: "ownership",
+        kind: FixCompile,
+        difficulty: 2,
+        title: "The Vanishing Texture",
+        story: "Your asset manager loads textures by name. After you added a size report, the whole engine stopped compiling: the compiler claims your texture was \"moved\" and can no longer be used.",
+        task: "Fix the compile error. `register_asset` must return the byte length of the texture name AND the texture string itself. Try not to clone the string.",
+        signatures: ["pub fn register_asset(name: &str) -> (usize, String)"],
+        starter_code: r##"pub fn load_texture(name: &str) -> String {
+    format!("texture:{name}")
+}
+
+pub fn describe_asset(asset: String) -> usize {
+    asset.len()
+}
+
+pub fn register_asset(name: &str) -> (usize, String) {
+    let asset = load_texture(name);
+    let size = describe_asset(asset);
+    (size, asset)
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn registers_with_size_and_asset() {
+    assert_eq!(register_asset("hero"), (12, String::from("texture:hero")));
+}
+
+#[test]
+fn works_for_empty_names() {
+    assert_eq!(register_asset(""), (8, String::from("texture:")));
+}
+"##,
+        checks: [
+            ForbidText(text: ".clone()", message: "Borrowing is cheaper than cloning here: let `describe_asset` take a reference."),
+        ],
+        hints: [
+            "Passing a `String` to a function by value MOVES it: the function becomes the owner and the caller can no longer use it.",
+            "If a function only needs to look at a value, it can borrow it. Change `describe_asset` to take a reference and pass `&asset`.",
+            "pub fn describe_asset(asset: &str) -> usize {\n    asset.len()\n}\n// ...and in register_asset: describe_asset(&asset)",
+        ],
+        solution: r##"pub fn load_texture(name: &str) -> String {
+    format!("texture:{name}")
+}
+
+pub fn describe_asset(asset: &str) -> usize {
+    asset.len()
+}
+
+pub fn register_asset(name: &str) -> (usize, String) {
+    let asset = load_texture(name);
+    let size = describe_asset(&asset);
+    (size, asset)
+}
+"##,
+        explanation: "Every value in Rust has exactly one owner. Passing a `String` by value moves ownership into the callee, so later uses of the original variable are rejected (E0382, use of moved value). When a function only needs to read data, take a reference (`&str`, `&String`) instead — the caller keeps ownership and nothing is copied.",
+        book_links: [
+            (title: "The Rust Book: What Is Ownership?", url: "https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html"),
+            (title: "Rust by Example: Ownership and moves", url: "https://doc.rust-lang.org/rust-by-example/scope/move.html"),
+        ],
+        prerequisites: [],
+        engine_tags: ["assets"],
+    ),
+    (
+        id: "ownership_02_copy_or_move_review",
+        topic: "ownership",
+        kind: CodeReview,
+        difficulty: 2,
+        title: "Review: Who Still Owns It?",
+        story: "A junior developer submitted four small functions for the asset manager. CI is red, and the failure is in exactly one of them. You are the reviewer.",
+        task: "Which snippet does NOT compile?",
+        explanation: "`String` owns heap memory and is not `Copy`, so `let b = a;` moves it and `a` can no longer be printed. Integers and tuples of Copy types are `Copy`: assignment copies them. `Vec::clone` makes an explicit deep copy, so both vectors stay usable.",
+        solution: "Snippet B: `let b = a;` moves the String, so the later use of `a` fails (E0382).",
+        book_links: [
+            (title: "The Rust Book: Ways Variables and Data Interact: Move", url: "https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html"),
+        ],
+        prerequisites: ["ownership_01_asset_move"],
+        engine_tags: ["assets"],
+        quiz: Some((
+            question: "Which snippet does NOT compile?",
+            code: "",
+            options_are_code: true,
+            options: [
+                r##"let a = 5;
+let b = a;
+println!("{a} {b}");"##,
+                r##"let a = String::from("sprite");
+let b = a;
+println!("{a} {b}");"##,
+                r##"let a = vec![1, 2, 3];
+let b = a.clone();
+println!("{a:?} {b:?}");"##,
+                r##"let a = (1, 2.5);
+let b = a;
+println!("{a:?} {b:?}");"##,
+            ],
+            correct: 1,
+        )),
+    ),
+    (
+        id: "ownership_03_merge_loot",
+        topic: "ownership",
+        kind: FromScratch,
+        difficulty: 2,
+        title: "Merge the Loot Tables",
+        story: "Two dungeon rooms each produce a list of loot. The treasure room should hand the player ONE combined list — and since the old lists are never used again, nothing needs to be copied.",
+        task: "Write `merge_loot`. It takes ownership of both lists and returns a single list with all of `first`'s items followed by all of `second`'s. Do not clone anything.",
+        signatures: ["pub fn merge_loot(first: Vec<String>, second: Vec<String>) -> Vec<String>"],
+        starter_code: r##"// Write `merge_loot` here.
+"##,
+        hidden_tests: r##"
+fn v(items: &[&str]) -> Vec<String> {
+    items.iter().map(|s| s.to_string()).collect()
+}
+
+#[test]
+fn concatenates_in_order() {
+    assert_eq!(merge_loot(v(&["sword", "shield"]), v(&["potion"])), v(&["sword", "shield", "potion"]));
+}
+
+#[test]
+fn handles_empty_lists() {
+    assert_eq!(merge_loot(v(&[]), v(&["gem"])), v(&["gem"]));
+    assert_eq!(merge_loot(v(&["gem"]), v(&[])), v(&["gem"]));
+    assert!(merge_loot(v(&[]), v(&[])).is_empty());
+}
+
+#[test]
+fn keeps_duplicates() {
+    assert_eq!(merge_loot(v(&["gold"]), v(&["gold"])), v(&["gold", "gold"]));
+}
+"##,
+        checks: [
+            ForbidText(text: ".clone()", message: "Moving the items is enough — no `.clone()` needed."),
+            ForbidText(text: ".to_vec()", message: "Moving the items is enough — no `.to_vec()` needed."),
+        ],
+        hints: [
+            "Because the function takes its arguments by value, it owns them. A function that owns a Vec can modify it, so you can reuse one of them as the result.",
+            "Declare the first parameter as `mut first: Vec<String>`, then use a Vec method that appends everything from another collection (`extend` or `append`).",
+            "pub fn merge_loot(mut first: Vec<String>, second: Vec<String>) -> Vec<String> {\n    first.extend(second);\n    // return `first`\n}",
+        ],
+        solution: r##"pub fn merge_loot(mut first: Vec<String>, second: Vec<String>) -> Vec<String> {
+    first.extend(second);
+    first
+}
+"##,
+        explanation: "Taking ownership lets a function reuse the caller's allocation instead of copying. `extend` consumes the second vector and moves each `String` into the first. No clones, no extra allocations (beyond growing `first`), and the compiler guarantees the caller can't accidentally keep using the old vectors.",
+        book_links: [
+            (title: "The Rust Book: Ownership and Functions", url: "https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html"),
+            (title: "Rust by Example: Vectors", url: "https://doc.rust-lang.org/rust-by-example/std/vec.html"),
+        ],
+        prerequisites: ["ownership_02_copy_or_move_review"],
+        engine_tags: ["assets"],
+    ),
+]

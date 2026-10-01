@@ -79,3 +79,18 @@ pub struct ErrorExplainer {
 }
 
 identified!(TopicDef, TierDef, CodexEntry, ErrorExplainer);
+
+/// An achievement unlocked when a named statistic reaches a value.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AchievementDef {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    /// Key into `PlayerProgress::stats` (e.g. `challenges_solved`).
+    pub stat: String,
+    pub at_least: i64,
+    #[serde(default)]
+    pub xp: u32,
+}
+
+identified!(AchievementDef);

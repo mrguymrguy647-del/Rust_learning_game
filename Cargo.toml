@@ -7,7 +7,7 @@ default-members = ["crates/studio-app"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-rust-version = "1.80"
+rust-version = "1.95"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -15,7 +15,7 @@ serde_json = "1"
 ron = "0.12"
 rand = "0.10"
 directories = "6"
-eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
+eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow", "links", "x11", "wayland"] }
 egui_extras = { version = "0.36", features = ["syntect"] }
 
 [workspace.lints.clippy]

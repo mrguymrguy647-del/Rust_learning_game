@@ -21,3 +21,5 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - name: Verify every challenge (reference solution passes, starter does not)
+        run: cargo run -q -p studio-core --bin validate-challenges -- --workers 2

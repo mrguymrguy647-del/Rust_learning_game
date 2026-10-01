@@ -54,19 +54,55 @@ pub fn chip(ui: &mut Ui, label: &str, value: &str, color: Color32) {
         });
 }
 
+/// A horizontal bar filled to `fraction`, with optional centred text. Draws cleanly at 0 %.
+pub fn bar(
+    ui: &mut Ui,
+    fraction: f32,
+    color: Color32,
+    text: Option<&str>,
+    width: f32,
+    height: f32,
+) -> egui::Response {
+    let pal = Palette::of(ui);
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+    let painter = ui.painter();
+    let rounding = (height / 2.0).round() as u8;
+    painter.rect_filled(rect, rounding, pal.code_bg);
+    let fraction = fraction.clamp(0.0, 1.0);
+    if fraction > 0.0 {
+        let fill_w = (rect.width() * fraction).max(height * 0.6).min(rect.width());
+        let fill = egui::Rect::from_min_size(rect.min, egui::vec2(fill_w, rect.height()));
+        painter.rect_filled(fill, rounding, color);
+    }
+    painter.rect_stroke(rect, rounding, Stroke::new(1.0, pal.border), egui::StrokeKind::Inside);
+    if let Some(text) = text {
+        painter.text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            text,
+            egui::FontId::proportional(12.5),
+            pal.text,
+        );
+    }
+    response
+}
+
+/// Left-aligned label in a fixed-width column (so rows line up in lists).
+pub fn label_fixed(ui: &mut Ui, width: f32, text: impl Into<egui::WidgetText>) {
+    ui.allocate_ui_with_layout(
+        egui::vec2(width, 20.0),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.add(egui::Label::new(text).truncate());
+        },
+    );
+}
+
 /// Thin labelled progress bar.
 pub fn meter(ui: &mut Ui, label: &str, fraction: f32, color: Color32) {
     ui.horizontal(|ui| {
-        ui.allocate_ui_with_layout(
-            egui::vec2(150.0, 18.0),
-            egui::Layout::left_to_right(egui::Align::Center),
-            |ui| ui.add(egui::Label::new(label).truncate()),
-        );
-        ui.add(
-            egui::ProgressBar::new(fraction.clamp(0.0, 1.0))
-                .desired_width(ui.available_width().min(260.0))
-                .fill(color)
-                .text(format!("{:.0}%", fraction.clamp(0.0, 1.0) * 100.0)),
-        );
+        label_fixed(ui, 150.0, label);
+        let text = format!("{:.0}%", fraction.clamp(0.0, 1.0) * 100.0);
+        bar(ui, fraction, color, Some(&text), ui.available_width().min(260.0), 18.0);
     });
 }

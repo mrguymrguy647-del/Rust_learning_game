@@ -1,6 +1,7 @@
 //! Rust Studio Tycoon — desktop entry point.
 
 mod app;
+mod editor;
 mod screens;
 mod theme;
 mod widgets;

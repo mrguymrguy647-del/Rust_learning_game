@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{GameDate, GameRng};
+use super::{GameDate, GameRng, PlayerProgress};
 use crate::settings::Difficulty;
 
 /// The player's company.
@@ -16,6 +16,8 @@ pub struct Studio {
     pub money: i64,
     /// Fans / reputation.
     pub reputation: i64,
+    /// Engine research points earned from engine-lab challenges.
+    pub research_points: i64,
 }
 
 impl Default for Studio {
@@ -26,6 +28,7 @@ impl Default for Studio {
             tier: 0,
             money: 15_000,
             reputation: 0,
+            research_points: 0,
         }
     }
 }
@@ -37,6 +40,9 @@ pub struct GameState {
     pub date: GameDate,
     pub difficulty: Difficulty,
     pub rng: GameRng,
+    pub progress: PlayerProgress,
+    /// A challenge in progress (the clock is paused while this is set).
+    pub pending_attempt: Option<super::Attempt>,
 }
 
 impl Default for GameState {
@@ -46,6 +52,8 @@ impl Default for GameState {
             date: GameDate::default(),
             difficulty: Difficulty::Normal,
             rng: GameRng::from_seed(1),
+            progress: PlayerProgress::default(),
+            pending_attempt: None,
         }
     }
 }
@@ -68,6 +76,13 @@ impl GameState {
             date: GameDate::default(),
             difficulty,
             rng,
+            progress: PlayerProgress::default(),
+            pending_attempt: None,
         }
+    }
+
+    /// Advance the calendar by `weeks` (full simulation arrives with the tycoon loop).
+    pub fn advance_weeks(&mut self, weeks: u32) {
+        self.date.advance(weeks);
     }
 }

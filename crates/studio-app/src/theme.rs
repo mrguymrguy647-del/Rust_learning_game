@@ -117,6 +117,8 @@ pub fn apply(ctx: &egui::Context, settings: &Settings) {
         style.spacing.button_padding = egui::vec2(12.0, 6.0);
         style.spacing.interact_size.y = 26.0;
         style.spacing.window_margin = egui::Margin::same(14);
+        // Solid scroll bars reserve their own space instead of overlapping buttons at the right edge.
+        style.spacing.scroll = egui::style::ScrollStyle::solid();
         style.text_styles = [
             (TextStyle::Heading, FontId::new(24.0, FontFamily::Proportional)),
             (TextStyle::Body, FontId::new(15.0, FontFamily::Proportional)),

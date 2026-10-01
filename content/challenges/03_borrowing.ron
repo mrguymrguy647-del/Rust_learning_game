@@ -1,0 +1,172 @@
+// Topic 3: Borrowing & Slices — "Text rendering & dialogue system"
+[
+    (
+        id: "borrowing_01_first_word",
+        topic: "borrowing",
+        kind: Complete,
+        difficulty: 2,
+        title: "Speaker Names",
+        story: "The dialogue system prints a speech bubble per line, and the bubble title is the first word of the line (\"Gandalf shouts…\" becomes \"Gandalf\"). The text must not be copied: dialogue lines can be huge and you render thousands per frame.",
+        task: "Complete `first_word` so it returns a slice of the line containing its first word (leading whitespace is skipped). A line with no words returns the empty string.",
+        signatures: ["pub fn first_word(line: &str) -> &str"],
+        starter_code: r##"pub fn first_word(line: &str) -> &str {
+    // TODO: return a slice of `line` — no allocation!
+    todo!()
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn takes_up_to_the_first_space() {
+    assert_eq!(first_word("Gandalf shouts loudly"), "Gandalf");
+}
+
+#[test]
+fn skips_leading_whitespace() {
+    assert_eq!(first_word("   hello world"), "hello");
+    assert_eq!(first_word("\tTabbed line"), "Tabbed");
+}
+
+#[test]
+fn single_word_and_empty_lines() {
+    assert_eq!(first_word("Ouch"), "Ouch");
+    assert_eq!(first_word(""), "");
+    assert_eq!(first_word("    "), "");
+}
+
+#[test]
+fn result_borrows_from_the_input() {
+    let line = String::from("Zelda gasps");
+    let word = first_word(&line);
+    // pointer equality: the result is a view into `line`, not a copy
+    assert!(std::ptr::eq(word.as_ptr(), line.as_ptr()));
+}
+"##,
+        hints: [
+            "A `&str` is a view into string data owned by someone else. A function can return a sub-view without allocating anything.",
+            "`str::split_whitespace()` yields the words as `&str` slices. `.next()` gives the first one as an `Option<&str>`.",
+            "pub fn first_word(line: &str) -> &str {\n    line.split_whitespace().next().unwrap_or(\"\")\n}",
+        ],
+        solution: r##"pub fn first_word(line: &str) -> &str {
+    line.split_whitespace().next().unwrap_or("")
+}
+"##,
+        explanation: "String slices (`&str`) are borrowed views: pointer + length, no copying. Because the returned slice points into the input, Rust ties their lifetimes together (here by lifetime elision: one input reference, so the output borrows from it). Returning `String` would have forced an allocation for every line.",
+        book_links: [
+            (title: "The Rust Book: The Slice Type", url: "https://doc.rust-lang.org/book/ch04-03-slices.html"),
+        ],
+        prerequisites: [],
+        engine_tags: ["dialogue"],
+    ),
+    (
+        id: "borrowing_02_mut_borrow_conflict",
+        topic: "borrowing",
+        kind: FixCompile,
+        difficulty: 3,
+        title: "Two Hands, One Backpack",
+        story: "Picking up a bonus item should grant it and report the name of the first item in uppercase for the UI. The compiler refuses: it says the inventory is borrowed twice, in conflicting ways.",
+        task: "Fix the compile error. After the call, `inventory` must contain the original items followed by \"bonus\", and the function returns the first item's name in uppercase.",
+        signatures: ["pub fn add_bonus_item(inventory: &mut Vec<String>) -> String"],
+        starter_code: r##"pub fn add_bonus_item(inventory: &mut Vec<String>) -> String {
+    let first = &inventory[0];
+    inventory.push(String::from("bonus"));
+    first.to_uppercase()
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn appends_bonus_and_reports_first_item() {
+    let mut inv = vec![String::from("sword")];
+    assert_eq!(add_bonus_item(&mut inv), "SWORD");
+    assert_eq!(inv, vec!["sword", "bonus"]);
+}
+
+#[test]
+fn works_with_several_items() {
+    let mut inv = vec![String::from("bow"), String::from("arrows")];
+    assert_eq!(add_bonus_item(&mut inv), "BOW");
+    assert_eq!(inv.len(), 3);
+    assert_eq!(inv[2], "bonus");
+}
+"##,
+        hints: [
+            "You may have any number of shared borrows (`&T`) OR exactly one mutable borrow (`&mut T`) alive at the same time — never both. `first` is a shared borrow that is still used after `push` needs a mutable one.",
+            "End the shared borrow before mutating. Compute whatever you need from `first` (the uppercase String) BEFORE calling `push`; the borrow ends at its last use.",
+            "    let first = inventory[0].to_uppercase();\n    inventory.push(String::from(\"bonus\"));\n    // return `first`",
+        ],
+        solution: r##"pub fn add_bonus_item(inventory: &mut Vec<String>) -> String {
+    let first = inventory[0].to_uppercase();
+    inventory.push(String::from("bonus"));
+    first
+}
+"##,
+        explanation: "Rust's borrowing rules: many readers or one writer, never both at once. That rule prevents the classic bug where `push` reallocates the vector and leaves `first` pointing at freed memory (a dangling reference). Borrows last only until their final use, so reordering the code — finish with the reference first, then mutate — resolves E0502.",
+        book_links: [
+            (title: "The Rust Book: References and Borrowing", url: "https://doc.rust-lang.org/book/ch04-02-references-and-borrowing.html"),
+            (title: "Rust by Example: Mutability of borrows", url: "https://doc.rust-lang.org/rust-by-example/scope/borrow/mut.html"),
+        ],
+        prerequisites: ["borrowing_01_first_word"],
+        engine_tags: ["dialogue"],
+    ),
+    (
+        id: "borrowing_03_truncate_dialogue",
+        topic: "borrowing",
+        kind: FindBug,
+        difficulty: 3,
+        title: "Cut Off in the Middle of a Wör",
+        story: "QA reports that long dialogue lines are cut at the wrong place for players who write in French, Spanish or Japanese — and in one case the game crashes outright. English works perfectly. The function compiles. Something is subtly wrong.",
+        task: "Find and fix the bug. `truncate_dialogue` must return at most `max_chars` *characters* (not bytes) of the line.",
+        signatures: ["pub fn truncate_dialogue(line: &str, max_chars: usize) -> String"],
+        starter_code: r##"/// Cut a dialogue line down to at most `max_chars` characters.
+pub fn truncate_dialogue(line: &str, max_chars: usize) -> String {
+    if line.len() <= max_chars {
+        return line.to_string();
+    }
+    line[..max_chars].to_string()
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn ascii_is_cut_correctly() {
+    assert_eq!(truncate_dialogue("Hello, hero!", 5), "Hello");
+}
+
+#[test]
+fn short_lines_are_untouched() {
+    assert_eq!(truncate_dialogue("Hi", 10), "Hi");
+    assert_eq!(truncate_dialogue("", 3), "");
+}
+
+#[test]
+fn accented_letters_count_as_one_character() {
+    assert_eq!(truncate_dialogue("héllo wörld", 5), "héllo");
+}
+
+#[test]
+fn never_cuts_inside_a_character() {
+    assert_eq!(truncate_dialogue("ñññ", 4), "ñññ");
+    assert_eq!(truncate_dialogue("ñññ", 2), "ññ");
+}
+
+#[test]
+fn japanese_text() {
+    assert_eq!(truncate_dialogue("日本語のテキスト", 3), "日本語");
+}
+"##,
+        hints: [
+            "`str::len()` returns the length in BYTES, and slicing `&line[..n]` also counts bytes. A character like `é` or `日` takes 2–4 bytes in UTF-8 (and slicing in the middle of one panics).",
+            "Iterate over characters instead: `line.chars()` yields `char`s, and iterator adapters such as `take(n)` limit how many you consume.",
+            "pub fn truncate_dialogue(line: &str, max_chars: usize) -> String {\n    line.chars().take(max_chars)/* collect into a String */\n}",
+        ],
+        solution: r##"/// Cut a dialogue line down to at most `max_chars` characters.
+pub fn truncate_dialogue(line: &str, max_chars: usize) -> String {
+    line.chars().take(max_chars).collect()
+}
+"##,
+        explanation: "Rust strings are UTF-8: `len()` and slice indices are measured in bytes, and slicing must land on a character boundary or the program panics. When you mean \"characters\", iterate with `.chars()`. (For user-visible glyphs such as emoji sequences you would need grapheme clusters from a crate like `unicode-segmentation`, but `chars()` is the right tool for this exercise.)",
+        book_links: [
+            (title: "The Rust Book: Storing UTF-8 Encoded Text with Strings", url: "https://doc.rust-lang.org/book/ch08-02-strings.html"),
+        ],
+        prerequisites: ["borrowing_02_mut_borrow_conflict"],
+        engine_tags: ["dialogue"],
+    ),
+]

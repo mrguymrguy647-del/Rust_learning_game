@@ -117,7 +117,7 @@ Settings: difficulty (economy only), hint-cost multiplier, sandbox timeout, edit
 ## 7. Status
 
 - [x] M1 Skeleton (workspace, content loader, settings, versioned saves, UI shell, headless UI tests)
-- [ ] M2 Challenge system
+- [x] M2 Challenge system (real-cargo runner, diagnostics + friendly errors, hints/contractor, editor UI, validator, first 10 challenges)
 - [ ] M3 Core tycoon loop
 - [ ] M4 Engine, staff, studio
 - [ ] M5 Market, events, post-launch
