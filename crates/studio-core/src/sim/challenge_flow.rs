@@ -115,11 +115,25 @@ pub struct RewardSummary {
 
 impl GameState {
     /// Cost in dollars of the next hint tier, already scaled by `multiplier`.
-    pub fn hint_cost(&self, challenge: &Challenge, tier: usize, multiplier: f32, attempt: &Attempt) -> i64 {
-        if attempt.context.is_practice() {
+    pub fn hint_cost(
+        &self,
+        content: &ContentLibrary,
+        challenge: &Challenge,
+        tier: usize,
+        multiplier: f32,
+        attempt: &Attempt,
+    ) -> i64 {
+        // Practice is free, and senior developers cover the first hints.
+        if attempt.context.is_practice() || tier < self.free_hints(content) {
             return 0;
         }
         challenge.hint_cost(tier, multiplier)
+    }
+
+    /// What a contractor would cost right now (experienced staff negotiate a discount).
+    pub fn contractor_price(&self, content: &ContentLibrary, challenge: &Challenge) -> i64 {
+        let full = challenge.contractor_cost(1.0) as f32;
+        (full * (1.0 - self.contractor_discount(content))).round() as i64
     }
 
     /// Reveal the next hint, paying with money or time. Returns the hint text, or `None`
@@ -134,7 +148,7 @@ impl GameState {
     ) -> Option<String> {
         let tier = attempt.hints_revealed;
         let text = challenge.hints.get(tier)?.clone();
-        let cost = self.hint_cost(challenge, tier, multiplier, attempt);
+        let cost = self.hint_cost(content, challenge, tier, multiplier, attempt);
         match payment {
             _ if cost == 0 => {}
             HintPayment::Money => {
@@ -157,8 +171,13 @@ impl GameState {
 
     /// Hire a contractor: expensive, but the solution is still shown. Money may go negative —
     /// progress is never blocked.
-    pub fn hire_contractor(&mut self, challenge: &Challenge, attempt: &mut Attempt, multiplier: f32) -> i64 {
-        let cost = if attempt.context.is_practice() { 0 } else { challenge.contractor_cost(multiplier) };
+    pub fn hire_contractor(
+        &mut self,
+        content: &ContentLibrary,
+        challenge: &Challenge,
+        attempt: &mut Attempt,
+    ) -> i64 {
+        let cost = if attempt.context.is_practice() { 0 } else { self.contractor_price(content, challenge) };
         self.studio.money -= cost;
         attempt.contractor = true;
         if !attempt.context.is_practice() {
@@ -193,7 +212,11 @@ impl GameState {
 
         summary.xp = (base.xp as f32 * mult * repeat).round() as u32;
         match &attempt.context {
-            ChallengeContext::Study | ChallengeContext::Practice => {}
+            ChallengeContext::Practice => {}
+            ChallengeContext::Study => {
+                // Self-study still yields half the research points: no dead ends in the engine tree.
+                summary.research = (base.research as f32 * mult.max(0.5) * repeat * 0.5).round() as u32;
+            }
             ChallengeContext::Engine { .. } => {
                 summary.research = (base.research as f32 * mult.max(0.5) * repeat).round() as u32;
             }
@@ -282,7 +305,7 @@ mod tests {
         let r = st.complete_challenge(&lib, c, &attempt);
         assert!(r.first_try && r.first_time);
         assert!(r.xp > 0);
-        assert_eq!((r.research, r.dev_points), (0, 0));
+        assert_eq!(r.dev_points, 0);
         assert_eq!(st.studio.money, money);
         assert!(st.progress.is_solved(&c.id));
         assert_eq!(st.progress.stat("challenges_solved"), 1);
@@ -368,7 +391,8 @@ mod tests {
         let c = first_code_challenge(&lib);
         let mut a = Attempt::new(c, ChallengeContext::Study);
         st.studio.money = 10;
-        let cost = st.hire_contractor(c, &mut a, 1.0);
+        let cost = st.hire_contractor(&lib, c, &mut a);
+        assert_eq!(cost, st.contractor_price(&lib, c));
         assert_eq!(st.studio.money, 10 - cost, "money may go negative; progress is never blocked");
         assert!(a.contractor);
         let r = st.complete_challenge(&lib, c, &a);

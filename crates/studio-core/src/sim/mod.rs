@@ -3,17 +3,20 @@
 pub mod challenge_flow;
 pub mod economy;
 pub mod engine;
+pub mod hiring;
 pub mod library;
 pub mod model;
 pub mod notify;
 pub mod progress;
 pub mod project;
 pub mod quality;
+pub mod research;
 pub mod reviews;
 pub mod rng;
 pub mod sales;
 pub mod staff;
 pub mod state;
+pub mod studio;
 pub mod tick;
 pub mod time;
 
@@ -25,4 +28,5 @@ pub use project::{Project, ProjectConfig};
 pub use rng::GameRng;
 pub use staff::{Skill, Staff};
 pub use state::{GameState, Studio};
+pub use studio::Loan;
 pub use time::GameDate;

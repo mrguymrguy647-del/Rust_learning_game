@@ -1,0 +1,12 @@
+// Name pools for generated candidates.
+(
+    first: ["Ada", "Alan", "Grace", "Linus", "Margaret", "Dennis", "Barbara", "Ken", "Radia", "Tim", "Hedy", "Vint",
+            "Katherine", "Bjarne", "Frances", "Guido", "Sophie", "Brian", "Anita", "Niklaus", "Shafi", "Edsger",
+            "Joan", "Donald", "Mira", "Jun", "Priya", "Mateo", "Ines", "Kofi", "Lena", "Omar", "Yuki", "Sven", "Zara",
+            "Tomas", "Aiko", "Nadia", "Felix", "Ruth", "Hugo", "Elif", "Rafael", "Mei", "Jonas", "Amara", "Luca", "Noor"],
+    last: ["Lovelace", "Turing", "Hopper", "Torvalds", "Hamilton", "Ritchie", "Liskov", "Thompson", "Perlman", "Berners",
+           "Lamarr", "Cerf", "Johnson", "Stroustrup", "Allen", "van Rossum", "Wilson", "Kernighan", "Borg", "Wirth",
+           "Goldwasser", "Dijkstra", "Clarke", "Knuth", "Chen", "Park", "Singh", "Garcia", "Silva", "Mensah", "Berg",
+           "Haddad", "Tanaka", "Lindqvist", "Okafor", "Novak", "Sato", "Petrova", "Weber", "Kaya", "Moreau", "Ivanov",
+           "Rossi", "Nakamura", "Bauer", "Abebe", "Costa", "Hassan"],
+)

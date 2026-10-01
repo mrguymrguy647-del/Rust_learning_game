@@ -119,7 +119,7 @@ Settings: difficulty (economy only), hint-cost multiplier, sandbox timeout, edit
 - [x] M1 Skeleton (workspace, content loader, settings, versioned saves, UI shell, headless UI tests)
 - [x] M2 Challenge system (real-cargo runner, diagnostics + friendly errors, hints/contractor, editor UI, validator, first 10 challenges)
 - [x] M3 Core tycoon loop (projects, phases, blockers, quality, reviews, sales, bankruptcy, Projects/Library/Dashboard UI)
-- [ ] M4 Engine, staff, studio
+- [x] M4 Engine, staff, studio (21-module research tree, hiring/training/morale/seniors, tier upgrades, loans)
 - [ ] M5 Market, events, post-launch
 - [ ] M6 Full curriculum + Codex
 - [ ] M7 Tutorial, balance, polish

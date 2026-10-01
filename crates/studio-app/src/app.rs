@@ -331,8 +331,12 @@ impl App {
                 self.new_game.studio = "Ferris Games".into();
                 self.new_game.founder = "Alex".into();
                 self.start_new_game();
-                if let Some(nav) = Nav::ALL.iter().find(|n| n.label().eq_ignore_ascii_case(tail)) {
+                let (nav_name, flag) = tail.split_once(':').unwrap_or((tail, ""));
+                if let Some(nav) = Nav::ALL.iter().find(|n| n.label().eq_ignore_ascii_case(nav_name)) {
                     self.nav = *nav;
+                }
+                if flag == "rich" {
+                    self.dev_enrich();
                 }
             }
             // `sim:<Nav>:<weeks>[:release]` — play a puzzle project for N weeks with auto-solved blockers.
@@ -359,6 +363,35 @@ impl App {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// Developer aid (`game:<Nav>:rich`): money, fans, research, a bigger office and some progress.
+    fn dev_enrich(&mut self) {
+        let content = self.content.clone();
+        let Some(game) = self.game.as_mut() else {
+            return;
+        };
+        game.studio.money = 250_000;
+        game.studio.reputation = 2_000;
+        game.studio.research_points = 400;
+        game.studio.tier = 2;
+        let ids: Vec<String> = content.challenges.iter().take(8).map(|c| c.id.clone()).collect();
+        for id in ids {
+            game.progress
+                .solved
+                .insert(id, studio_core::sim::SolveRecord { first_try: true, ..Default::default() });
+        }
+        game.engine.built.insert("asset_manager".into());
+        game.refresh_candidates(&content);
+        for _ in 0..2 {
+            if let Some(c) = game.candidates.first().map(|c| c.id) {
+                let _ = game.hire(&content, c);
+            }
+        }
+        let _ = game.take_loan(&content, 20_000);
+        for _ in 0..8 {
+            game.advance_week(&content);
         }
     }
 
@@ -613,6 +646,9 @@ impl App {
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| match self.nav {
                 Nav::Dashboard => crate::screens::dashboard::show(self, ui),
                 Nav::Projects => crate::screens::projects::show(self, ui),
+                Nav::Engine => crate::screens::engine::show(self, ui),
+                Nav::Staff => crate::screens::staff::show(self, ui),
+                Nav::Studio => crate::screens::studio::show(self, ui),
                 Nav::Library => crate::screens::library::show(self, ui),
                 Nav::Skills => crate::screens::skills::show(self, ui),
                 Nav::Practice => crate::screens::practice::show(self, ui),
@@ -874,6 +910,12 @@ mod tests {
         let mut app = test_app("states");
         // Mid-project.
         app.dev_simulate(12, false);
+        for nav in Nav::ALL {
+            app.nav = nav;
+            run_frames(&mut app, 2);
+        }
+        // A well-funded studio with staff, loans and built modules.
+        app.dev_jump("game:Dashboard:rich");
         for nav in Nav::ALL {
             app.nav = nav;
             run_frames(&mut app, 2);

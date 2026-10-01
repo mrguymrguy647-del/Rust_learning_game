@@ -19,8 +19,8 @@ use serde::de::DeserializeOwned;
 
 pub use challenge::{BookLink, Challenge, ChallengeKind, Check, Quiz, Rewards};
 pub use game::{
-    AchievementDef, Balance, CodexEntry, EngineModuleDef, ErrorExplainer, GenreDef, Identified, OutletDef,
-    PlatformDef, PlatformKind, SizeDef, ThemeDef, TierDef, TopicDef,
+    AchievementDef, Balance, CodexEntry, EngineModuleDef, ErrorExplainer, GenreDef, Identified, NamePool,
+    OutletDef, PlatformDef, PlatformKind, SizeDef, ThemeDef, TierDef, TopicDef, TraitDef,
 };
 
 mod embedded {
@@ -61,6 +61,8 @@ pub struct ContentLibrary {
     pub platforms: Vec<PlatformDef>,
     pub outlets: Vec<OutletDef>,
     pub engine_modules: Vec<EngineModuleDef>,
+    pub traits: Vec<TraitDef>,
+    pub names: NamePool,
     pub balance: Balance,
     /// Files that failed to parse. Embedded content must have none (a unit test enforces it).
     pub issues: Vec<ContentIssue>,
@@ -129,6 +131,13 @@ impl ContentLibrary {
             ("game", "platforms.ron") => {
                 replaced = merge_list(&mut self.platforms, parse(src, &mut self.issues))
             }
+            ("game", "traits.ron") => replaced = merge_list(&mut self.traits, parse(src, &mut self.issues)),
+            ("game", "staff_names.ron") => match ron::from_str::<NamePool>(&src.text) {
+                Ok(n) => self.names = n,
+                Err(err) => {
+                    self.issues.push(ContentIssue { file: src.path.clone(), message: err.to_string() })
+                }
+            },
             ("game", "engine_modules.ron") => {
                 replaced = merge_list(&mut self.engine_modules, parse(src, &mut self.issues))
             }
@@ -156,6 +165,18 @@ impl ContentLibrary {
         self.topics.iter().find(|t| t.id == id)
     }
 
+    pub fn module(&self, id: &str) -> Option<&EngineModuleDef> {
+        self.engine_modules.iter().find(|m| m.id == id)
+    }
+
+    pub fn trait_def(&self, id: &str) -> Option<&TraitDef> {
+        self.traits.iter().find(|t| t.id == id)
+    }
+
+    pub fn genre(&self, id: &str) -> Option<&GenreDef> {
+        self.genres.iter().find(|g| g.id == id)
+    }
+
     pub fn tier(&self, index: usize) -> Option<&TierDef> {
         self.tiers.get(index)
     }
@@ -164,7 +185,11 @@ impl ContentLibrary {
         self.error_explainers.iter().find(|e| e.id == code)
     }
 
-    pub fn challenges_in_topic<'a>(&'a self, topic: &'a str) -> impl Iterator<Item = &'a Challenge> {
+    /// Challenges of a topic. The returned items borrow only from the library, not from `topic`.
+    pub fn challenges_in_topic<'a, 'b>(
+        &'a self,
+        topic: &'b str,
+    ) -> impl Iterator<Item = &'a Challenge> + use<'a, 'b> {
         self.challenges.iter().filter(move |c| c.topic == topic)
     }
 
@@ -220,6 +245,7 @@ impl ContentLibrary {
             }
         }
         problems.extend(self.find_prerequisite_cycles());
+        problems.extend(self.validate_engine());
         for e in &self.codex {
             if !topic_ids.contains(&e.topic.as_str()) {
                 problems.push(format!("codex {}: unknown topic `{}`", e.id, e.topic));
@@ -227,6 +253,87 @@ impl ContentLibrary {
             if let Some(ch) = &e.unlock_challenge {
                 if self.challenge(ch).is_none() {
                     problems.push(format!("codex {}: unknown unlock challenge `{ch}`", e.id));
+                }
+            }
+        }
+        problems
+    }
+
+    /// Engine tree consistency: known topics/modules/challenges/features, no cycles, satisfiable.
+    fn validate_engine(&self) -> Vec<String> {
+        let mut problems = Vec::new();
+        let ids: Vec<&str> = self.engine_modules.iter().map(|m| m.id.as_str()).collect();
+        let features: Vec<&str> =
+            self.engine_modules.iter().flat_map(|m| m.features.iter().map(String::as_str)).collect();
+        for m in &self.engine_modules {
+            if self.topic(&m.topic).is_none() {
+                problems.push(format!("module {}: unknown topic `{}`", m.id, m.topic));
+            }
+            for r in &m.requires_modules {
+                if !ids.contains(&r.as_str()) {
+                    problems.push(format!("module {}: unknown required module `{r}`", m.id));
+                }
+            }
+            for c in &m.required_challenges {
+                if self.challenge(c).is_none() {
+                    problems.push(format!("module {}: unknown required challenge `{c}`", m.id));
+                }
+            }
+            for (topic, need) in &m.required_topic_solves {
+                if self.topic(topic).is_none() {
+                    problems.push(format!("module {}: unknown topic `{topic}`", m.id));
+                    continue;
+                }
+                let have = self.challenges_in_topic(topic).count() as u32;
+                // Topics still being written (no challenges yet) are checked once they have content.
+                if have > 0 && have < *need {
+                    problems.push(format!(
+                        "module {}: needs {need} solved `{topic}` challenges but only {have} exist",
+                        m.id
+                    ));
+                }
+            }
+        }
+        // Every feature a genre/size/platform asks for must be provided by some module.
+        let mut needed: Vec<(String, &String)> = Vec::new();
+        needed.extend(
+            self.genres
+                .iter()
+                .flat_map(|g| g.requires_features.iter().map(move |f| (format!("genre {}", g.id), f))),
+        );
+        needed.extend(
+            self.balance
+                .sizes
+                .iter()
+                .flat_map(|s| s.requires_features.iter().map(move |f| (format!("size {:?}", s.size), f))),
+        );
+        needed.extend(
+            self.platforms
+                .iter()
+                .flat_map(|p| p.requires_features.iter().map(move |f| (format!("platform {}", p.id), f))),
+        );
+        if !self.engine_modules.is_empty() {
+            for (who, f) in needed {
+                if !features.contains(&f.as_str()) {
+                    problems.push(format!("{who} requires feature `{f}` that no engine module provides"));
+                }
+            }
+        }
+        // Dependency cycles between modules.
+        for m in &self.engine_modules {
+            let mut stack: Vec<&str> = m.requires_modules.iter().map(String::as_str).collect();
+            let mut seen: Vec<&str> = Vec::new();
+            while let Some(id) = stack.pop() {
+                if id == m.id {
+                    problems.push(format!("module {}: depends on itself", m.id));
+                    break;
+                }
+                if seen.contains(&id) {
+                    continue;
+                }
+                seen.push(id);
+                if let Some(dep) = self.module(id) {
+                    stack.extend(dep.requires_modules.iter().map(String::as_str));
                 }
             }
         }

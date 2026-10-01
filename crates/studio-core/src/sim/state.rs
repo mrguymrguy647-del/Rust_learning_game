@@ -23,8 +23,11 @@ pub struct Studio {
     pub money: i64,
     /// Fans / reputation.
     pub reputation: i64,
-    /// Engine research points earned from engine-lab challenges.
+    /// Engine research points (from challenges and your programmers).
     pub research_points: i64,
+    /// Fractional research points carried between weeks.
+    pub research_frac: f32,
+    pub loans: Vec<super::studio::Loan>,
 }
 
 impl Default for Studio {
@@ -36,6 +39,8 @@ impl Default for Studio {
             money: 15_000,
             reputation: 0,
             research_points: 0,
+            research_frac: 0.0,
+            loans: Vec::new(),
         }
     }
 }
@@ -51,6 +56,8 @@ pub struct GameState {
     /// A challenge in progress (the clock is paused while this is set).
     pub pending_attempt: Option<Attempt>,
     pub staff: Vec<Staff>,
+    /// Current pool of job candidates.
+    pub candidates: Vec<Staff>,
     pub engine: EngineState,
     pub project: Option<Project>,
     pub games: Vec<ReleasedGame>,
@@ -72,6 +79,7 @@ impl Default for GameState {
             progress: PlayerProgress::default(),
             pending_attempt: None,
             staff: vec![Staff::founder(1, "You")],
+            candidates: Vec::new(),
             engine: EngineState::default(),
             project: None,
             games: Vec::new(),

@@ -288,6 +288,13 @@ pub struct Balance {
     pub decay_high: f32,
     /// Sales stop when weekly units fall below this.
     pub min_weekly_units: f32,
+    /// Interest on loans, per week (0.004 = 0.4 %).
+    pub loan_weekly_rate: f32,
+    /// Recruiting fee as a multiple of the weekly salary.
+    pub hire_fee_weeks: f32,
+    pub candidate_refresh_weeks: u32,
+    /// Research points per week per programming skill point above 2.
+    pub research_per_skill_point: f32,
 }
 
 impl Default for Balance {
@@ -320,6 +327,10 @@ impl Default for Balance {
             decay_low: 0.55,
             decay_high: 0.85,
             min_weekly_units: 5.0,
+            loan_weekly_rate: 0.004,
+            hire_fee_weeks: 2.0,
+            candidate_refresh_weeks: 4,
+            research_per_skill_point: 0.35,
         }
     }
 }
@@ -353,6 +364,9 @@ pub struct EngineModuleDef {
     /// Challenges that must be solved before the module can be built.
     #[serde(default)]
     pub required_challenges: Vec<String>,
+    /// `(topic id, count)`: this many challenges of the topic must be solved.
+    #[serde(default)]
+    pub required_topic_solves: Vec<(String, u32)>,
     /// Research points spent when starting the build.
     pub research_cost: i64,
     pub money_cost: i64,
@@ -371,3 +385,31 @@ pub struct EngineModuleDef {
 }
 
 identified!(EngineModuleDef);
+
+/// A staff personality trait with small mechanical effects.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TraitDef {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub output_mult: f32,
+    /// Added to the owner's morale every week.
+    pub morale_delta: f32,
+    pub bug_mult: f32,
+    /// Multiplier on training duration (below 1 = faster).
+    pub training_mult: f32,
+    /// Gives the studio one extra free hint (like a senior developer).
+    pub free_hint: bool,
+    /// Added to every other team member's morale each week.
+    pub team_morale: f32,
+}
+
+/// Name pools for generated job candidates.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct NamePool {
+    pub first: Vec<String>,
+    pub last: Vec<String>,
+}
+
+identified!(TraitDef);

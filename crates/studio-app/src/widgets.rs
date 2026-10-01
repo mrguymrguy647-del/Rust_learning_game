@@ -70,7 +70,7 @@ pub fn bar(
     painter.rect_filled(rect, rounding, pal.code_bg);
     let fraction = fraction.clamp(0.0, 1.0);
     if fraction > 0.0 {
-        let fill_w = (rect.width() * fraction).max(height * 0.6).min(rect.width());
+        let fill_w = (rect.width() * fraction).min(rect.width());
         let fill = egui::Rect::from_min_size(rect.min, egui::vec2(fill_w, rect.height()));
         painter.rect_filled(fill, rounding, color);
     }

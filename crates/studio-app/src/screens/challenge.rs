@@ -235,8 +235,9 @@ fn apply(app: &mut App, view: &mut ChallengeView, action: Option<Action>) {
         }
         Action::Contractor => {
             let challenge = view.challenge.clone();
+            let content = app.content.clone();
             if let Some(game) = app.game.as_mut() {
-                let cost = game.hire_contractor(&challenge, &mut view.attempt, 1.0);
+                let cost = game.hire_contractor(&content, &challenge, &mut view.attempt);
                 if cost > 0 {
                     app.toast(
                         ToastKind::Info,
@@ -401,15 +402,20 @@ fn left_pane(app: &mut App, view: &mut ChallengeView, ui: &mut egui::Ui) -> Opti
     if view.attempt.hints_revealed < total_hints && view.solved.is_none() {
         let tier = view.attempt.hints_revealed;
         let multiplier = app.settings.hint_cost_multiplier;
+        let content = app.content.clone();
+        let senior_free = app.game.as_ref().map(|g| g.free_hints(&content)).unwrap_or(0);
         let (cost, money) = match &app.game {
-            Some(g) => (g.hint_cost(&view.challenge, tier, multiplier, &view.attempt), g.studio.money),
+            Some(g) => {
+                (g.hint_cost(&content, &view.challenge, tier, multiplier, &view.attempt), g.studio.money)
+            }
             None => (0, 0),
         };
         let label =
             ["concept nudge", "specific direction", "partial code"].get(tier).copied().unwrap_or("hint");
         ui.horizontal_wrapped(|ui| {
             if cost == 0 {
-                if ui.button(format!("Reveal hint {} ({label}) — free", tier + 1)).clicked() {
+                let why = if tier < senior_free { " (covered by your senior developers)" } else { "" };
+                if ui.button(format!("Reveal hint {} ({label}) — free{why}", tier + 1)).clicked() {
                     action = Some(Action::Hint(HintPayment::Money));
                 }
             } else {
@@ -447,7 +453,8 @@ fn left_pane(app: &mut App, view: &mut ChallengeView, ui: &mut egui::Ui) -> Opti
                 action = Some(Action::ShowSolution);
             }
         } else if view.attempt.contractor_available(threshold) {
-            let cost = view.challenge.contractor_cost(1.0);
+            let cost =
+                app.game.as_ref().map(|g| g.contractor_price(&app.content, &view.challenge)).unwrap_or(0);
             widgets::dim(
                 ui,
                 "A contractor will solve this for you. It is expensive and counts only a little towards mastery — but you will still see the solution and its explanation.",
@@ -1005,7 +1012,7 @@ mod tests {
         let rewards = v.solved.clone().expect("contractor finishes the challenge");
         assert!(rewards.contractor && !rewards.first_try);
         let game = app.game.as_ref().unwrap();
-        assert_eq!(before - game.studio.money, v.challenge.contractor_cost(1.0));
+        assert_eq!(before - game.studio.money, game.contractor_price(&app.content, &v.challenge));
         assert!(game.progress.solved["basics_01_score_counter"].contractor);
         let _ = std::fs::remove_dir_all(app.paths.root());
     }

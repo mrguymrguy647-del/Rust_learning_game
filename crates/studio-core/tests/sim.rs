@@ -340,3 +340,81 @@ fn matching_the_genre_focus_beats_ignoring_it() {
     let wrong = Weights::new(5.0, 5.0, 85.0, 3.0, 2.0);
     assert!(play(ideal) > play(wrong) + 4.0);
 }
+
+#[test]
+fn engine_modules_gate_genres_and_studio_tier_gates_sizes() {
+    let lib = content();
+    let mut st = new_state(&lib);
+    st.studio.money = 10_000_000;
+    let mut cfg = puzzle_config(&lib);
+    cfg.genre = "platformer".into();
+    cfg.focus = lib.genre("platformer").unwrap().ideal;
+    let problem = st.project_start_problem(&lib, &cfg).expect("platformer needs the 2D renderer");
+    assert!(problem.contains("renderer_2d"), "{problem}");
+    st.engine.built.insert("asset_manager".into());
+    st.engine.built.insert("renderer_2d".into());
+    assert!(st.project_start_problem(&lib, &cfg).is_none());
+
+    // Size is gated by studio tier AND engine features.
+    cfg.size = ProjectSize::Medium;
+    assert!(st.project_start_problem(&lib, &cfg).unwrap().contains("Garage"));
+    st.studio.tier = 1;
+    assert!(st.project_start_problem(&lib, &cfg).is_none());
+    cfg.size = ProjectSize::AAA;
+    st.studio.tier = 3;
+    assert!(st.project_start_problem(&lib, &cfg).unwrap().contains("renderer_3d"));
+}
+
+#[test]
+fn a_bigger_team_finishes_sooner_but_costs_more() {
+    let lib = content();
+    let play = |extra_staff: usize| {
+        let mut st = new_state(&lib);
+        st.studio.tier = 2;
+        st.studio.money = 10_000_000;
+        for i in 0..extra_staff {
+            st.staff.push(studio_core::sim::Staff { id: 100 + i as u32, salary: 900, ..Default::default() });
+        }
+        st.start_project(&lib, puzzle_config(&lib)).unwrap();
+        let start = st.date.week();
+        run_until(&lib, &mut st, 200, |s| s.project.as_ref().is_some_and(|p| p.is_complete()));
+        (st.date.week() - start, lib.balance.start_money.max(10_000_000) - st.studio.money)
+    };
+    let (solo_weeks, solo_cost) = play(0);
+    let (team_weeks, team_cost) = play(3);
+    assert!(team_weeks * 2 < solo_weeks + 3, "{team_weeks} vs {solo_weeks}");
+    assert!(team_cost > 0 && solo_cost > 0);
+}
+
+#[test]
+fn morale_effects_on_output_are_visible_in_the_team_snapshot() {
+    let lib = content();
+    let mut st = new_state(&lib);
+    let happy = st.team_week(&lib, false).output;
+    st.staff[0].morale = 5.0;
+    let sad = st.team_week(&lib, false).output;
+    assert!(sad < happy * 0.8, "{sad} vs {happy}");
+}
+
+#[test]
+fn every_engine_module_is_reachable_from_the_start() {
+    // Following dependencies from the free starting module, every module can eventually be built.
+    let lib = content();
+    let mut built: std::collections::HashSet<String> =
+        lib.engine_modules.iter().filter(|m| m.starts_built).map(|m| m.id.clone()).collect();
+    loop {
+        let next: Vec<String> = lib
+            .engine_modules
+            .iter()
+            .filter(|m| !built.contains(&m.id) && m.requires_modules.iter().all(|r| built.contains(r)))
+            .map(|m| m.id.clone())
+            .collect();
+        if next.is_empty() {
+            break;
+        }
+        built.extend(next);
+    }
+    for m in &lib.engine_modules {
+        assert!(built.contains(&m.id), "module {} is unreachable", m.id);
+    }
+}

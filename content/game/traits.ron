@@ -1,0 +1,17 @@
+// Personality traits for staff. All effects are small and clearly shown in the Staff screen.
+[
+    (id: "workaholic", name: "Workaholic", description: "Works fast, but burns out: loses morale every week.",
+     output_mult: 1.12, morale_delta: -1.0, bug_mult: 1.0, training_mult: 1.0, free_hint: false, team_morale: 0.0),
+    (id: "team_player", name: "Team Player", description: "Everybody on the team is a little happier.",
+     output_mult: 1.0, morale_delta: 0.0, bug_mult: 1.0, training_mult: 1.0, free_hint: false, team_morale: 0.5),
+    (id: "perfectionist", name: "Perfectionist", description: "Slower, but ships fewer bugs.",
+     output_mult: 0.9, morale_delta: 0.0, bug_mult: 0.8, training_mult: 1.0, free_hint: false, team_morale: 0.0),
+    (id: "fast_learner", name: "Fast Learner", description: "Training courses finish much sooner.",
+     output_mult: 1.0, morale_delta: 0.0, bug_mult: 1.0, training_mult: 0.6, free_hint: false, team_morale: 0.0),
+    (id: "rustacean", name: "Rustacean", description: "Lives and breathes Rust. Happy to give you an extra free hint.",
+     output_mult: 1.0, morale_delta: 0.0, bug_mult: 0.95, training_mult: 1.0, free_hint: true, team_morale: 0.0),
+    (id: "night_owl", name: "Night Owl", description: "Brilliant at 3 a.m. Slightly unreliable at 9.",
+     output_mult: 1.05, morale_delta: -0.3, bug_mult: 1.1, training_mult: 1.0, free_hint: false, team_morale: 0.0),
+    (id: "mentor", name: "Mentor", description: "Teaches juniors on the side: the whole team learns a bit faster.",
+     output_mult: 0.95, morale_delta: 0.2, bug_mult: 1.0, training_mult: 0.85, free_hint: true, team_morale: 0.3),
+]

@@ -37,8 +37,13 @@ impl GameState {
         fin.rent = rent;
         fin.salaries = salaries;
 
+        let interest = self.weekly_interest(content);
+        fin.other += interest;
+
         self.advance_project(content, &mut fin, quiet);
         self.update_morale(content);
+        self.advance_engine(content);
+        self.advance_staff(content);
 
         self.studio.money += fin.net();
         if let Some(p) = self.project.as_mut() {
@@ -98,6 +103,7 @@ impl GameState {
                 let work = team.output.min(p.work_total - p.work_done).max(0.0);
                 p.work_done += work;
                 p.output_acc += work;
+                p.bug_mult_acc += team.bug_mult * work;
                 p.effective_acc = p.effective_acc.map(|c, v| v + team.effective.get(c) * work);
                 p.weeks_in_dev += 1;
                 let budget_part = if p.work_total > 0.0 {

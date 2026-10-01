@@ -135,7 +135,7 @@ impl Rewards {
     /// Default rewards for a difficulty level (1..=5).
     pub fn for_difficulty(difficulty: u8) -> Rewards {
         let d = difficulty.clamp(1, 5) as u32;
-        Rewards { dev_points: 20 * d, quality: 2.0 + 1.5 * d as f32, research: 4 * d, xp: 15 * d + 5 }
+        Rewards { dev_points: 20 * d, quality: 2.0 + 1.5 * d as f32, research: 10 * d, xp: 15 * d + 5 }
     }
 }
 

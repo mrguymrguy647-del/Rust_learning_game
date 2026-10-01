@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::engine::EngineState;
 use super::library::ReleasedGame;
 use super::model::{Category, Weights};
 use super::project::Project;
@@ -35,15 +36,23 @@ pub fn focus_fit(focus: &Weights, ideal: &Weights) -> f32 {
 }
 
 /// Estimated final bug percentage for a project.
-pub fn estimate_bugs(content: &ContentLibrary, p: &Project) -> f32 {
+pub fn estimate_bugs(content: &ContentLibrary, engine: &EngineState, p: &Project) -> f32 {
     let prog_effective = p.avg_effective().get(Category::Performance);
     let size_base = 8.0 + 4.0 * p.size.index() as f32;
     let skill_factor = (1.5 - prog_effective * 1.4).clamp(0.35, 1.4);
-    let _ = content;
-    (size_base * skill_factor + p.crunch_bugs + 8.0 * p.skipped_blockers as f32).clamp(0.0, 100.0)
+    let trait_factor = if p.output_acc > 0.0 { p.bug_mult_acc / p.output_acc } else { 1.0 };
+    // QA tooling catches a good share of the bugs.
+    let tooling = if engine.has_feature(content, "editor") { 0.8 } else { 1.0 };
+    (size_base * skill_factor * trait_factor * tooling + p.crunch_bugs + 8.0 * p.skipped_blockers as f32)
+        .clamp(0.0, 100.0)
 }
 
-pub fn evaluate(content: &ContentLibrary, p: &Project, past: &[ReleasedGame]) -> QualityReport {
+pub fn evaluate(
+    content: &ContentLibrary,
+    engine: &EngineState,
+    p: &Project,
+    past: &[ReleasedGame],
+) -> QualityReport {
     let balance = &content.balance;
     let size = balance.size(p.size);
     let genre = content.genres.iter().find(|g| g.id == p.genre);
@@ -67,7 +76,7 @@ pub fn evaluate(content: &ContentLibrary, p: &Project, past: &[ReleasedGame]) ->
     let same_genre = recent.iter().filter(|g| g.genre == p.genre && g.theme != p.theme).count() as f32;
     let novelty_factor = (1.0 - 0.08 * same_combo - 0.03 * same_genre).clamp(0.7, 1.0);
 
-    let bugs = estimate_bugs(content, p);
+    let bugs = estimate_bugs(content, engine, p);
     let bug_penalty = (bugs / 100.0 * 0.8).min(0.5);
     let challenge_bonus = p.challenge_quality.min(20.0);
 

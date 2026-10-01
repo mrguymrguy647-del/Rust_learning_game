@@ -39,6 +39,8 @@ pub struct Project {
     /// Σ (effective skill × work) per category; divide by `output_acc` for the average.
     pub effective_acc: Weights,
     pub output_acc: f32,
+    /// Σ (bug multiplier × work) for the team's traits; divide by `output_acc` for the average.
+    pub bug_mult_acc: f32,
     pub blockers: Vec<Blocker>,
     pub skipped_blockers: u32,
     /// Quality bonus collected from solved blockers.
@@ -71,6 +73,7 @@ impl Default for Project {
             work_total: 1.0,
             effective_acc: Weights::default(),
             output_acc: 0.0,
+            bug_mult_acc: 0.0,
             blockers: Vec::new(),
             skipped_blockers: 0,
             challenge_quality: 0.0,
@@ -138,6 +141,8 @@ pub struct TeamWeek {
     /// Effective skill per category (0..~1.5).
     pub effective: Weights,
     pub avg_morale: f32,
+    /// Output-weighted bug multiplier from the team's traits (1.0 = neutral).
+    pub bug_mult: f32,
 }
 
 impl GameState {
@@ -146,9 +151,14 @@ impl GameState {
         let mut total = 0.0;
         let mut acc = Weights::default();
         let mut morale = 0.0;
+        let mut bug_acc = 0.0;
         for s in &self.staff {
-            let out = s.output(crunch, crunch_speed);
+            let trait_defs = s.traits.iter().filter_map(|t| content.trait_def(t));
+            let (out_mult, bug_mult) =
+                trait_defs.fold((1.0f32, 1.0f32), |(o, b), t| (o * t.output_mult, b * t.bug_mult));
+            let out = s.output(crunch, crunch_speed) * out_mult;
             total += out;
+            bug_acc += out * bug_mult;
             morale += s.morale;
             for c in Category::ALL {
                 acc.set(c, acc.get(c) + out * s.category_skill(c));
@@ -160,7 +170,8 @@ impl GameState {
         } else {
             Weights::default()
         };
-        TeamWeek { output: total, effective, avg_morale: morale / n }
+        let bug_mult = if total > 0.0 { bug_acc / total } else { 1.0 };
+        TeamWeek { output: total, effective, avg_morale: morale / n, bug_mult }
     }
 
     /// Why the project cannot be started, or `None` if everything is fine.
@@ -368,7 +379,7 @@ impl GameState {
             return Err("There is nothing to release.".into());
         };
 
-        let q = quality::evaluate(content, &p, &self.games);
+        let q = quality::evaluate(content, &self.engine, &p, &self.games);
         let genre_name = content
             .genres
             .iter()
@@ -448,6 +459,6 @@ impl GameState {
 
     /// Estimated current bug level of the running project (for the UI).
     pub fn project_bug_estimate(&self, content: &ContentLibrary) -> f32 {
-        self.project.as_ref().map(|p| estimate_bugs(content, p)).unwrap_or(0.0)
+        self.project.as_ref().map(|p| estimate_bugs(content, &self.engine, p)).unwrap_or(0.0)
     }
 }
