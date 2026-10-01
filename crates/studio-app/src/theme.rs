@@ -69,8 +69,24 @@ impl Palette {
     }
 }
 
+/// egui's default proportional font lacks arrows and geometric shapes (▲ ▼ → ●), but the bundled
+/// monospace font has them: use it as a fallback so those icons render everywhere.
+fn install_fonts(ctx: &egui::Context) {
+    let marker = egui::Id::new("rst_fonts_installed");
+    if ctx.data(|d| d.get_temp::<bool>(marker)).unwrap_or(false) {
+        return;
+    }
+    let mut fonts = egui::FontDefinitions::default();
+    if let Some(list) = fonts.families.get_mut(&FontFamily::Proportional) {
+        list.push("Hack".to_owned());
+    }
+    ctx.set_fonts(fonts);
+    ctx.data_mut(|d| d.insert_temp(marker, true));
+}
+
 /// Install visuals, fonts sizes and zoom for the given settings.
 pub fn apply(ctx: &egui::Context, settings: &Settings) {
+    install_fonts(ctx);
     let pal = Palette::from_dark(settings.dark_mode);
     let mut visuals = if settings.dark_mode { egui::Visuals::dark() } else { egui::Visuals::light() };
     visuals.panel_fill = pal.panel;

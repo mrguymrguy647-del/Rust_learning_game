@@ -141,6 +141,11 @@ pub struct App {
     pub toolchain: ToolchainStatus,
     pub challenge: Option<ChallengeView>,
     pub practice_filter: Option<ChallengeKind>,
+    /// The "new project" form (created lazily).
+    pub project_form: Option<crate::screens::projects::ProjectForm>,
+    /// Index into `game.games` of the release whose reviews are shown.
+    pub review_popup: Option<usize>,
+    pub confirm_cancel_project: bool,
     /// Egui context, captured on the first frame so background threads can request repaints.
     pub egui_ctx: Option<egui::Context>,
     /// Unsubmitted code of challenges the player walked away from.
@@ -180,6 +185,9 @@ impl App {
             toolchain: ToolchainStatus::Detecting,
             challenge: None,
             practice_filter: None,
+            project_form: None,
+            review_popup: None,
+            confirm_cancel_project: false,
             egui_ctx: None,
             drafts: HashMap::new(),
             dev_auto_submit: None,
@@ -327,6 +335,17 @@ impl App {
                     self.nav = *nav;
                 }
             }
+            // `sim:<Nav>:<weeks>[:release]` — play a puzzle project for N weeks with auto-solved blockers.
+            "sim" => {
+                let mut parts = tail.split(':');
+                let nav = parts.next().unwrap_or("Dashboard");
+                let weeks: u32 = parts.next().and_then(|w| w.parse().ok()).unwrap_or(10);
+                let release = parts.next() == Some("release");
+                self.dev_simulate(weeks, release);
+                if let Some(n) = Nav::ALL.iter().find(|n| n.label().eq_ignore_ascii_case(nav)) {
+                    self.nav = *n;
+                }
+            }
             "challenge" => {
                 self.new_game.studio = "Ferris Games".into();
                 self.start_new_game();
@@ -340,6 +359,49 @@ impl App {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// Developer aid: fast-forward a fresh game for screenshots (blockers are solved instantly).
+    fn dev_simulate(&mut self, weeks: u32, release: bool) {
+        use studio_core::sim::{Audience, ProjectConfig, ProjectSize};
+        self.new_game.studio = "Ferris Games".into();
+        self.new_game.founder = "Alex".into();
+        self.start_new_game();
+        let content = self.content.clone();
+        let Some(game) = self.game.as_mut() else {
+            return;
+        };
+        let Some(genre) = content.genres.first() else {
+            return;
+        };
+        let cfg = ProjectConfig {
+            name: String::new(),
+            genre: genre.id.clone(),
+            theme: "cooking".into(),
+            platform: "pc".into(),
+            audience: Audience::Everyone,
+            size: ProjectSize::Small,
+            focus: genre.ideal,
+            sequel_of: None,
+        };
+        let _ = game.start_project(&content, cfg);
+        for _ in 0..weeks {
+            while let Some(a) = game.pending_attempt.clone() {
+                if let Some(c) = content.challenge(&a.challenge_id) {
+                    let mut done = a.clone();
+                    done.submissions = 1;
+                    game.complete_challenge(&content, c, &done);
+                }
+                game.pending_attempt = None;
+            }
+            game.advance_week(&content);
+        }
+        if release && game.release_project(&content).is_ok() {
+            for _ in 0..6 {
+                game.advance_week(&content);
+            }
+            self.review_popup = Some(0);
         }
     }
 
@@ -375,8 +437,10 @@ impl App {
 
     pub fn start_new_game(&mut self) {
         let form = &self.new_game;
-        let state = GameState::new_game(&form.studio, &form.founder, form.difficulty, None);
+        let state = GameState::new_game(&self.content, &form.studio, &form.founder, form.difficulty, None);
         self.game = Some(state);
+        self.project_form = None;
+        self.review_popup = None;
         self.current_slot = Some(AUTOSAVE_SLOT.to_string());
         self.view = View::Game;
         self.nav = Nav::Dashboard;
@@ -449,6 +513,16 @@ impl App {
         if self.speed == Speed::Paused || self.game.is_none() || self.challenge.is_some() {
             return;
         }
+        // Pressing play while development is blocked reopens the blocking challenge.
+        if let Some(a) = self.game.as_ref().and_then(|g| g.pending_attempt.clone()) {
+            self.speed = Speed::Paused;
+            self.open_challenge(&a.challenge_id, a.context);
+            return;
+        }
+        if self.game.as_ref().is_some_and(|g| g.game_over.is_some()) {
+            self.speed = Speed::Paused;
+            return;
+        }
         let dt = ui.input(|i| i.stable_dt).min(0.25);
         self.time_acc += dt * self.speed.multiplier();
         while self.time_acc >= WEEK_SECONDS {
@@ -458,15 +532,58 @@ impl App {
         ui.ctx().request_repaint_after(Duration::from_millis(80));
     }
 
+    /// One simulated week. A blocking challenge pauses the clock and opens the editor.
     pub fn advance_one_week(&mut self) {
+        let content = self.content.clone();
         let Some(game) = self.game.as_mut() else {
             return;
         };
-        game.date.advance(1);
+        let feed_len = game.feed.len();
+        let was_over = game.game_over.is_some();
+        game.advance_week(&content);
+
+        // Surface the newest bad/good news as toasts so the player notices without opening the dashboard.
+        let fresh: Vec<_> = game.feed.iter().skip(feed_len.min(game.feed.len())).cloned().collect();
+        let blocked = game.pending_attempt.clone();
+        let over = game.game_over.is_some() && !was_over;
+        for n in fresh {
+            let kind = match n.kind {
+                studio_core::sim::notify::NoteKind::Info => ToastKind::Info,
+                studio_core::sim::notify::NoteKind::Good => ToastKind::Good,
+                studio_core::sim::notify::NoteKind::Warn => ToastKind::Warn,
+                studio_core::sim::notify::NoteKind::Bad => ToastKind::Bad,
+            };
+            self.toast(kind, n.text);
+        }
+
         self.weeks_since_autosave += 1;
-        if self.weeks_since_autosave >= AUTOSAVE_EVERY_WEEKS {
+        if self.weeks_since_autosave >= AUTOSAVE_EVERY_WEEKS || blocked.is_some() || over {
             self.weeks_since_autosave = 0;
             self.autosave();
+        }
+        if over || blocked.is_some() {
+            self.speed = Speed::Paused;
+        }
+        if let Some(a) = blocked {
+            if self.challenge.is_none() {
+                self.open_challenge(&a.challenge_id, a.context);
+            }
+        }
+    }
+
+    /// Release the finished project and show its reviews.
+    pub fn release_project(&mut self) {
+        let content = self.content.clone();
+        let Some(game) = self.game.as_mut() else {
+            return;
+        };
+        match game.release_project(&content) {
+            Ok(idx) => {
+                self.review_popup = Some(idx);
+                self.speed = Speed::Paused;
+                self.autosave();
+            }
+            Err(msg) => self.toast(ToastKind::Warn, msg),
         }
     }
 
@@ -495,6 +612,8 @@ impl App {
         egui::CentralPanel::default_margins().show(ui, |ui| {
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| match self.nav {
                 Nav::Dashboard => crate::screens::dashboard::show(self, ui),
+                Nav::Projects => crate::screens::projects::show(self, ui),
+                Nav::Library => crate::screens::library::show(self, ui),
                 Nav::Skills => crate::screens::skills::show(self, ui),
                 Nav::Practice => crate::screens::practice::show(self, ui),
                 Nav::Settings => crate::screens::settings::show(self, ui),
@@ -504,6 +623,8 @@ impl App {
 
         self.save_dialog(ui.ctx());
         self.exit_dialog(ui.ctx());
+        crate::screens::reviews::show_popup(self, ui.ctx());
+        crate::screens::gameover::show(self, ui.ctx());
     }
 
     fn top_bar(&mut self, ui: &mut egui::Ui) {
@@ -745,6 +866,73 @@ mod tests {
             run_frames(&mut app, 2);
             app.challenge = None;
         }
+        let _ = std::fs::remove_dir_all(app.paths.root());
+    }
+
+    #[test]
+    fn tycoon_screens_render_in_every_game_state() {
+        let mut app = test_app("states");
+        // Mid-project.
+        app.dev_simulate(12, false);
+        for nav in Nav::ALL {
+            app.nav = nav;
+            run_frames(&mut app, 2);
+        }
+        // After a release, with the review window open.
+        app.dev_simulate(60, true);
+        assert!(app.review_popup.is_some());
+        for nav in Nav::ALL {
+            app.nav = nav;
+            run_frames(&mut app, 2);
+        }
+        app.review_popup = None;
+        // Blocked by a challenge (blocker open on screen), then bankrupt.
+        app.dev_simulate(0, false);
+        if let Some(game) = app.game.as_mut() {
+            game.studio.money = -1;
+            game.debt_weeks = 3;
+        }
+        for nav in [Nav::Dashboard, Nav::Projects] {
+            app.nav = nav;
+            run_frames(&mut app, 2);
+        }
+        if let Some(game) = app.game.as_mut() {
+            game.game_over = Some(studio_core::sim::economy::GameOver { week: 5, reason: "test".into() });
+        }
+        run_frames(&mut app, 2);
+        let _ = std::fs::remove_dir_all(app.paths.root());
+    }
+
+    #[test]
+    fn a_blocker_opens_the_challenge_automatically_and_pauses_the_clock() {
+        use studio_core::sim::{Audience, ProjectConfig, ProjectSize};
+        let mut app = test_app("blocker");
+        app.new_game.studio = "T".into();
+        app.start_new_game();
+        let content = app.content.clone();
+        let genre = content.genres.first().unwrap();
+        let cfg = ProjectConfig {
+            name: "X".into(),
+            genre: genre.id.clone(),
+            theme: "cooking".into(),
+            platform: "pc".into(),
+            audience: Audience::Everyone,
+            size: ProjectSize::Small,
+            focus: genre.ideal,
+            sequel_of: None,
+        };
+        app.game.as_mut().unwrap().start_project(&content, cfg).unwrap();
+        app.speed = Speed::X4;
+        for _ in 0..200 {
+            if app.challenge.is_some() {
+                break;
+            }
+            app.advance_one_week();
+        }
+        let view = app.challenge.as_ref().expect("the blocking challenge opened by itself");
+        assert_eq!(view.attempt.context, ChallengeContext::Project);
+        assert_eq!(app.speed, Speed::Paused);
+        assert!(app.game.as_ref().unwrap().pending_attempt.is_some());
         let _ = std::fs::remove_dir_all(app.paths.root());
     }
 

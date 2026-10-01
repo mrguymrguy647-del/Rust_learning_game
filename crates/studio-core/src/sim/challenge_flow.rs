@@ -126,6 +126,7 @@ impl GameState {
     /// if there is nothing left to reveal or the studio cannot afford it.
     pub fn buy_hint(
         &mut self,
+        content: &ContentLibrary,
         challenge: &Challenge,
         attempt: &mut Attempt,
         payment: HintPayment,
@@ -144,7 +145,7 @@ impl GameState {
                 attempt.hints_paid += cost;
             }
             HintPayment::Time => {
-                self.advance_weeks(1);
+                self.advance_weeks_quiet(content, 1);
             }
         }
         attempt.hints_revealed += 1;
@@ -233,6 +234,10 @@ impl GameState {
             }
         }
 
+        if matches!(attempt.context, ChallengeContext::Project) {
+            self.apply_blocker_result(&challenge.id, &summary);
+        }
+
         for a in self.progress.check_achievements(&content.achievements) {
             summary.new_achievements.push(a.name.clone());
         }
@@ -250,7 +255,10 @@ mod tests {
     use crate::settings::Difficulty;
 
     fn setup() -> (ContentLibrary, GameState) {
-        (ContentLibrary::embedded(), GameState::new_game("T", "P", Difficulty::Normal, Some(1)))
+        (
+            ContentLibrary::embedded(),
+            GameState::new_game(&ContentLibrary::embedded(), "T", "P", Difficulty::Normal, Some(1)),
+        )
     }
 
     fn first_code_challenge(lib: &ContentLibrary) -> &Challenge {
@@ -321,12 +329,12 @@ mod tests {
         let c = first_code_challenge(&lib);
         let mut a = Attempt::new(c, ChallengeContext::Study);
         let start = st.studio.money;
-        let h1 = st.buy_hint(c, &mut a, HintPayment::Money, 1.0).unwrap();
+        let h1 = st.buy_hint(&lib, c, &mut a, HintPayment::Money, 1.0).unwrap();
         assert_eq!(h1, c.hints[0]);
         assert_eq!(st.studio.money, start - c.hint_cost(0, 1.0));
-        st.buy_hint(c, &mut a, HintPayment::Money, 1.0).unwrap();
-        st.buy_hint(c, &mut a, HintPayment::Money, 1.0).unwrap();
-        assert!(st.buy_hint(c, &mut a, HintPayment::Money, 1.0).is_none());
+        st.buy_hint(&lib, c, &mut a, HintPayment::Money, 1.0).unwrap();
+        st.buy_hint(&lib, c, &mut a, HintPayment::Money, 1.0).unwrap();
+        assert!(st.buy_hint(&lib, c, &mut a, HintPayment::Money, 1.0).is_none());
         assert_eq!(a.hints_revealed, 3);
         assert_eq!(a.hints_paid, start - st.studio.money);
         assert!(c.hint_cost(2, 1.0) > c.hint_cost(0, 1.0));
@@ -338,9 +346,9 @@ mod tests {
         let c = first_code_challenge(&lib);
         st.studio.money = 0;
         let mut a = Attempt::new(c, ChallengeContext::Study);
-        assert!(st.buy_hint(c, &mut a, HintPayment::Money, 1.0).is_none());
+        assert!(st.buy_hint(&lib, c, &mut a, HintPayment::Money, 1.0).is_none());
         assert_eq!(a.hints_revealed, 0);
-        assert!(st.buy_hint(c, &mut a, HintPayment::Money, 0.0).is_some(), "multiplier 0 = free hints");
+        assert!(st.buy_hint(&lib, c, &mut a, HintPayment::Money, 0.0).is_some(), "multiplier 0 = free hints");
     }
 
     #[test]
@@ -349,7 +357,7 @@ mod tests {
         let c = first_code_challenge(&lib);
         let mut a = Attempt::new(c, ChallengeContext::Study);
         let (money, week) = (st.studio.money, st.date.week());
-        st.buy_hint(c, &mut a, HintPayment::Time, 1.0).unwrap();
+        st.buy_hint(&lib, c, &mut a, HintPayment::Time, 1.0).unwrap();
         assert_eq!(st.date.week(), week + 1);
         assert!(st.studio.money <= money);
     }

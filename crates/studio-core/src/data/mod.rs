@@ -18,7 +18,10 @@ use std::path::{Path, PathBuf};
 use serde::de::DeserializeOwned;
 
 pub use challenge::{BookLink, Challenge, ChallengeKind, Check, Quiz, Rewards};
-pub use game::{AchievementDef, CodexEntry, ErrorExplainer, Identified, TierDef, TopicDef};
+pub use game::{
+    AchievementDef, Balance, CodexEntry, EngineModuleDef, ErrorExplainer, GenreDef, Identified, OutletDef,
+    PlatformDef, PlatformKind, SizeDef, ThemeDef, TierDef, TopicDef,
+};
 
 mod embedded {
     include!(concat!(env!("OUT_DIR"), "/embedded_content.rs"));
@@ -53,6 +56,12 @@ pub struct ContentLibrary {
     pub codex: Vec<CodexEntry>,
     pub error_explainers: Vec<ErrorExplainer>,
     pub achievements: Vec<AchievementDef>,
+    pub genres: Vec<GenreDef>,
+    pub themes: Vec<ThemeDef>,
+    pub platforms: Vec<PlatformDef>,
+    pub outlets: Vec<OutletDef>,
+    pub engine_modules: Vec<EngineModuleDef>,
+    pub balance: Balance,
     /// Files that failed to parse. Embedded content must have none (a unit test enforces it).
     pub issues: Vec<ContentIssue>,
     /// `id (file)` of entries that replaced an earlier entry with the same id. Expected for
@@ -115,6 +124,21 @@ impl ContentLibrary {
             ("game", "achievements.ron") => {
                 replaced = merge_list(&mut self.achievements, parse(src, &mut self.issues))
             }
+            ("game", "genres.ron") => replaced = merge_list(&mut self.genres, parse(src, &mut self.issues)),
+            ("game", "themes.ron") => replaced = merge_list(&mut self.themes, parse(src, &mut self.issues)),
+            ("game", "platforms.ron") => {
+                replaced = merge_list(&mut self.platforms, parse(src, &mut self.issues))
+            }
+            ("game", "engine_modules.ron") => {
+                replaced = merge_list(&mut self.engine_modules, parse(src, &mut self.issues))
+            }
+            ("game", "outlets.ron") => replaced = merge_list(&mut self.outlets, parse(src, &mut self.issues)),
+            ("game", "balance.ron") => match ron::from_str::<Balance>(&src.text) {
+                Ok(b) => self.balance = b,
+                Err(err) => {
+                    self.issues.push(ContentIssue { file: src.path.clone(), message: err.to_string() })
+                }
+            },
             _ => {}
         }
         self.overrides.extend(replaced.into_iter().map(|id| format!("{id} ({})", src.path)));

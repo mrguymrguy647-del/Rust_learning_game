@@ -236,7 +236,13 @@ mod tests {
     #[test]
     fn save_and_load_round_trip() {
         let paths = temp_paths("rt");
-        let mut state = GameState::new_game("Ferris Games", "Sam", Difficulty::Hard, Some(5));
+        let mut state = GameState::new_game(
+            &crate::data::ContentLibrary::embedded(),
+            "Ferris Games",
+            "Sam",
+            Difficulty::Hard,
+            Some(5),
+        );
         state.studio.money = 12_345;
         save_game(&paths, "slot1", &state).unwrap();
         let loaded = load_game(&paths, "slot1").unwrap();

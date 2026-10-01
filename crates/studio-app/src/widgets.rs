@@ -106,3 +106,96 @@ pub fn meter(ui: &mut Ui, label: &str, fraction: f32, color: Color32) {
         bar(ui, fraction, color, Some(&text), ui.available_width().min(260.0), 18.0);
     });
 }
+
+/// Four-step phase indicator with the current phase highlighted and a progress bar below.
+pub fn phase_stepper(ui: &mut Ui, current: studio_core::sim::Phase, fraction: f32) {
+    let pal = Palette::of(ui);
+    ui.horizontal(|ui| {
+        for phase in studio_core::sim::Phase::ALL {
+            let done = phase < current;
+            let active = phase == current;
+            let (fill, text_color) = if active {
+                (pal.accent, pal.accent_text)
+            } else if done {
+                (pal.good.gamma_multiply(0.35), pal.text)
+            } else {
+                (pal.card_hover, pal.dim)
+            };
+            egui::Frame::new()
+                .fill(fill)
+                .corner_radius(12)
+                .inner_margin(egui::Margin::symmetric(12, 4))
+                .show(ui, |ui| {
+                    let mark = if done { "✔ " } else { "" };
+                    ui.label(RichText::new(format!("{mark}{}", phase.label())).color(text_color).strong());
+                });
+        }
+    });
+    bar(
+        ui,
+        fraction,
+        pal.accent,
+        Some(&format!("{:.0}%", fraction * 100.0)),
+        ui.available_width().min(640.0),
+        18.0,
+    );
+}
+
+/// A tiny line chart of `values` (e.g. weekly sales).
+pub fn sparkline(ui: &mut Ui, values: &[f32], size: egui::Vec2, color: Color32) {
+    let pal = Palette::of(ui);
+    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let painter = ui.painter();
+    painter.rect_filled(rect, 4, pal.code_bg);
+    if values.len() < 2 {
+        return;
+    }
+    let max = values.iter().copied().fold(1.0f32, f32::max);
+    let n = values.len() as f32 - 1.0;
+    let points: Vec<egui::Pos2> = values
+        .iter()
+        .enumerate()
+        .map(|(i, v)| {
+            egui::pos2(
+                rect.left() + 3.0 + (rect.width() - 6.0) * i as f32 / n,
+                rect.bottom() - 3.0 - (rect.height() - 6.0) * (v / max),
+            )
+        })
+        .collect();
+    painter.add(egui::Shape::line(points, Stroke::new(1.5, color)));
+}
+
+/// A review score (0–10) in a coloured pill.
+pub fn score_badge(ui: &mut Ui, score: f32) {
+    let pal = Palette::of(ui);
+    let color = if score >= 8.0 {
+        pal.good
+    } else if score >= 6.0 {
+        pal.info
+    } else if score >= 4.0 {
+        pal.warn
+    } else {
+        pal.bad
+    };
+    egui::Frame::new()
+        .fill(color.gamma_multiply(0.25))
+        .stroke(Stroke::new(1.0, color))
+        .corner_radius(8)
+        .inner_margin(egui::Margin::symmetric(8, 2))
+        .show(ui, |ui| {
+            ui.label(RichText::new(format!("{score:.1}")).strong().size(17.0).color(color));
+        });
+}
+
+/// Colour for a 0–100 metascore.
+pub fn meta_color(pal: &Palette, meta: f32) -> Color32 {
+    if meta >= 80.0 {
+        pal.good
+    } else if meta >= 60.0 {
+        pal.info
+    } else if meta >= 40.0 {
+        pal.warn
+    } else {
+        pal.bad
+    }
+}

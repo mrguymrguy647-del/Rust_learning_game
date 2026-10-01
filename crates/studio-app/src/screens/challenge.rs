@@ -223,8 +223,9 @@ fn apply(app: &mut App, view: &mut ChallengeView, action: Option<Action>) {
         Action::Hint(payment) => {
             let multiplier = app.settings.hint_cost_multiplier;
             let challenge = view.challenge.clone();
+            let content = app.content.clone();
             let text = match app.game.as_mut() {
-                Some(game) => game.buy_hint(&challenge, &mut view.attempt, payment, multiplier),
+                Some(game) => game.buy_hint(&content, &challenge, &mut view.attempt, payment, multiplier),
                 None => None,
             };
             match text {

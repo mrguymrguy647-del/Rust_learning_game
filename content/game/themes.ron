@@ -1,0 +1,15 @@
+// Themes combine with genres: some pairings simply work better than others.
+[
+    (id: "fantasy", name: "Fantasy", flavor: "Dragons, wizards and ancient ruins."),
+    (id: "scifi", name: "Sci-Fi", flavor: "Neon cities and rogue AIs."),
+    (id: "space", name: "Space", flavor: "Stars, stations and lonely signals."),
+    (id: "medieval", name: "Medieval", flavor: "Castles, sieges and questionable hygiene."),
+    (id: "pirates", name: "Pirates", flavor: "Rum, treasure and cursed maps."),
+    (id: "zombies", name: "Zombies", flavor: "The dead are restless. Again."),
+    (id: "robots", name: "Robots", flavor: "Beep, boop, existential crisis."),
+    (id: "cooking", name: "Cooking", flavor: "Chaos in the kitchen."),
+    (id: "crime", name: "Crime", flavor: "Heists, detectives and double crosses."),
+    (id: "farming", name: "Farming", flavor: "Turnips. Many turnips."),
+    (id: "ocean", name: "Ocean", flavor: "Reefs, wrecks and things that glow."),
+    (id: "ninjas", name: "Ninjas", flavor: "Stealth, shadows and very quiet shoes."),
+]

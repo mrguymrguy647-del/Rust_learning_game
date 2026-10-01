@@ -1,0 +1,9 @@
+// Platforms. Evergreen ones (end_week: 0) never expire; consoles appear and fade over time.
+[
+    (id: "pc", name: "PC", kind: Pc, description: "Open platform. Anyone can publish; the audience grows steadily.",
+     launch_week: 0, peak_week: 0, end_week: 0, market: 1.0, growth_per_year: 0.12,
+     store_cut: 0.25, price_mult: 1.0, dev_cost: 0, requires_features: [], min_tier: 0),
+    (id: "mobile", name: "Mobile", kind: Mobile, description: "Huge audience, low prices, impatient players.",
+     launch_week: 0, peak_week: 0, end_week: 0, market: 1.8, growth_per_year: 0.2,
+     store_cut: 0.30, price_mult: 0.35, dev_cost: 0, requires_features: [], min_tier: 0),
+]
