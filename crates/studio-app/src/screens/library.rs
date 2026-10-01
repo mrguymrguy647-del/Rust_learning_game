@@ -4,9 +4,16 @@ use eframe::egui::{self, RichText};
 use studio_core::fmt;
 use studio_core::sim::GameDate;
 
-use crate::app::App;
+use crate::app::{App, Nav, ToastKind};
 use crate::theme::Palette;
 use crate::widgets;
+
+#[derive(Clone, Copy)]
+enum Act {
+    Patch,
+    Dlc,
+    Sequel,
+}
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let pal = Palette::of(ui);
@@ -16,7 +23,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let content = app.content.clone();
     let games = game.games.clone();
     let week = game.date.week();
+    let game_state = game.clone();
     let mut open_reviews: Option<usize> = None;
+    let mut act: Option<(Act, u32)> = None;
 
     ui.heading("Library");
     widgets::dim(ui, "Everything you have shipped.");
@@ -93,6 +102,50 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 );
                 widgets::chip(ui, "Age", &format!("{} wk", g.age(week)), pal.dim);
             });
+            // ---- post-launch actions
+            if g.is_dlc {
+                widgets::dim(ui, "Downloadable content for the game above.");
+            } else {
+                ui.horizontal_wrapped(|ui| {
+                    let patch_problem = game_state.patch_problem(&content, g.id);
+                    let patch_label =
+                        format!("Patch ({})", fmt::money(game_state.patch_cost(&content, g.id)));
+                    let r = ui.add_enabled(patch_problem.is_none(), egui::Button::new(patch_label));
+                    let r = r.on_hover_text(patch_problem.clone().unwrap_or_else(|| {
+                        "Fix bugs, win back players and give sales a little bump.".into()
+                    }));
+                    if r.clicked() {
+                        act = Some((Act::Patch, g.id));
+                    }
+                    let dlc_problem = game_state.dlc_problem(g.id);
+                    let r = ui.add_enabled(
+                        dlc_problem.is_none(),
+                        egui::Button::new(format!(
+                            "Make DLC ({}/{})",
+                            g.dlc_count,
+                            studio_core::sim::postlaunch::MAX_DLC
+                        )),
+                    );
+                    let r = r.on_hover_text(
+                        dlc_problem
+                            .clone()
+                            .unwrap_or_else(|| "A small expansion that sells to your existing fans.".into()),
+                    );
+                    if r.clicked() {
+                        act = Some((Act::Dlc, g.id));
+                    }
+                    let can_sequel = game_state.project.is_none();
+                    let r = ui.add_enabled(can_sequel, egui::Button::new("Make a sequel"));
+                    let r = r.on_hover_text(if can_sequel {
+                        "Reuse the setup and carry your fans over. A good original makes the sequel easier."
+                    } else {
+                        "Finish the current project first."
+                    });
+                    if r.clicked() {
+                        act = Some((Act::Sequel, g.id));
+                    }
+                });
+            }
             let series: Vec<f32> = g.sales.iter().map(|u| *u as f32).collect();
             widgets::sparkline(ui, &series, egui::vec2(ui.available_width().min(520.0), 46.0), pal.accent);
         });
@@ -100,5 +153,34 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     }
     if let Some(i) = open_reviews {
         app.review_popup = Some(i);
+    }
+    if let Some((a, id)) = act {
+        match a {
+            Act::Patch => {
+                if let Some(g) = app.game.as_mut() {
+                    match g.start_patch(&content, id) {
+                        Ok(()) => app.toast(ToastKind::Good, "The team is working on a patch."),
+                        Err(e) => app.toast(ToastKind::Warn, e),
+                    }
+                }
+            }
+            Act::Dlc => {
+                if let Some(g) = app.game.as_mut() {
+                    match g.start_dlc(&content, id) {
+                        Ok(()) => {
+                            app.toast(ToastKind::Good, "DLC development started.");
+                            app.nav = Nav::Projects;
+                        }
+                        Err(e) => app.toast(ToastKind::Warn, e),
+                    }
+                }
+            }
+            Act::Sequel => {
+                if let Some(cfg) = app.game.as_ref().and_then(|g| g.sequel_config(id)) {
+                    app.project_form = Some(crate::screens::projects::ProjectForm::from_config(&cfg));
+                    app.nav = Nav::Projects;
+                }
+            }
+        }
     }
 }

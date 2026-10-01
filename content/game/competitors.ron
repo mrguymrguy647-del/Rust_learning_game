@@ -1,0 +1,19 @@
+// Rival studios. They release games, compete for the same audience and win awards.
+[
+    (id: "borrowed_time", name: "Borrowed Time Studios", tagline: "We always give it back.", strength: 0.55,
+     genres: ["puzzle", "platformer"], interval_weeks: 30),
+    (id: "ferrous", name: "Ferrous Interactive", tagline: "Hard, reliable, slightly rusty.", strength: 0.70,
+     genres: ["action", "roguelike"], interval_weeks: 40),
+    (id: "zero_cost", name: "Zero Cost Games", tagline: "Abstractions are free. Our games are not.", strength: 0.62,
+     genres: ["strategy", "simulation"], interval_weeks: 45),
+    (id: "lifetime_labs", name: "Lifetime Labs", tagline: "Making games last 'static.", strength: 0.78,
+     genres: ["rpg", "adventure"], interval_weeks: 60),
+    (id: "crab_claw", name: "Crab Claw Entertainment", tagline: "Sideways success.", strength: 0.85,
+     genres: ["racing", "action"], interval_weeks: 70),
+    (id: "trait_object", name: "Trait Object Software", tagline: "Dynamic dispatch, static quality.", strength: 0.66,
+     genres: ["simulation", "puzzle", "adventure"], interval_weeks: 38),
+    (id: "monomorph", name: "Monomorph Media", tagline: "One copy per type. Many copies per player.", strength: 0.92,
+     genres: ["rpg", "strategy", "horror"], interval_weeks: 90),
+    (id: "cargo_cult", name: "Cargo Cult Games", tagline: "We do not know why it works either.", strength: 0.50,
+     genres: ["horror", "roguelike", "platformer"], interval_weeks: 26),
+]

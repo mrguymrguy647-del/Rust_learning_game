@@ -43,6 +43,8 @@ pub struct ChallengeView {
     show_solution: bool,
     /// Where to return when the challenge is closed.
     pub return_to: crate::app::Nav,
+    /// The jam timer ran out: the attempt is over.
+    expired: bool,
 }
 
 impl ChallengeView {
@@ -63,6 +65,7 @@ impl ChallengeView {
             solved: None,
             show_solution: false,
             return_to,
+            expired: false,
         }
     }
 
@@ -81,6 +84,8 @@ enum Action {
     Contractor,
     SubmitQuiz,
     ShowSolution,
+    /// The game-jam clock ran out.
+    JamExpired,
 }
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
@@ -89,7 +94,18 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     };
     poll_run(app, &mut view);
 
+    // Game-jam countdown (real time).
     let mut action: Option<Action> = None;
+    if view.solved.is_none() && !view.expired {
+        if let Some(limit) = view.attempt.time_limit_secs {
+            view.attempt.elapsed_secs += ui.input(|i| i.stable_dt).min(0.25);
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+            if view.attempt.elapsed_secs >= limit as f32 {
+                action = Some(Action::JamExpired);
+            }
+        }
+    }
+
     let pal = Palette::of(ui);
 
     egui::Panel::top("challenge_header").show(ui, |ui| {
@@ -126,7 +142,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     if let Some(v) = app.challenge.take() {
         // `apply` may have replaced it (it never does today) — keep the newest.
         app.challenge = Some(v);
-    } else if !matches!(action, Some(Action::Close)) {
+    } else if !matches!(action, Some(Action::Close) | Some(Action::JamExpired)) {
         app.challenge = Some(view);
     } else {
         // Closing: unsolved blocking attempts stay in the save so they can be resumed.
@@ -135,7 +151,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             ChallengeContext::Project | ChallengeContext::Hotfix { .. } | ChallengeContext::Jam { .. }
         );
         if let Some(game) = app.game.as_mut() {
-            if blocking && view.solved.is_none() {
+            if blocking && view.solved.is_none() && !view.expired {
                 game.pending_attempt = Some(view.attempt.clone());
             } else {
                 game.pending_attempt = None;
@@ -210,6 +226,16 @@ fn apply(app: &mut App, view: &mut ChallengeView, action: Option<Action>) {
     };
     match action {
         Action::Close => {}
+        Action::JamExpired => {
+            view.expired = true;
+            let content = app.content.clone();
+            if let (Some(game), ChallengeContext::Jam { event_id }) =
+                (app.game.as_mut(), view.attempt.context.clone())
+            {
+                game.fail_jam(&content, &event_id);
+            }
+            app.toast(ToastKind::Warn, "Time is up! The jam is over.");
+        }
         Action::Cancel => {
             if let Some(run) = &view.run {
                 run.cancel();
@@ -317,6 +343,11 @@ fn header(app: &mut App, view: &mut ChallengeView, ui: &mut egui::Ui) -> Option<
         ui.label(RichText::new(view.challenge.kind.label()).color(pal.accent));
         ui.label(RichText::new(stars(view.challenge.difficulty)).color(pal.warn));
         widgets::chip(ui, "Mode", view.attempt.context.label(), pal.info);
+        if let Some(limit) = view.attempt.time_limit_secs {
+            let left = (limit as f32 - view.attempt.elapsed_secs).max(0.0) as u32;
+            let color = if left < 60 { pal.bad } else { pal.warn };
+            widgets::chip(ui, "Time left", &format!("{}:{:02}", left / 60, left % 60), color);
+        }
         if let Some(game) = &app.game {
             if !view.attempt.context.is_practice() {
                 let color = if game.studio.money < 0 { pal.bad } else { pal.good };

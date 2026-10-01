@@ -74,14 +74,25 @@ pub fn evaluate(
     let recent: Vec<&ReleasedGame> = past.iter().rev().take(3).collect();
     let same_combo = recent.iter().filter(|g| g.genre == p.genre && g.theme == p.theme).count() as f32;
     let same_genre = recent.iter().filter(|g| g.genre == p.genre && g.theme != p.theme).count() as f32;
-    let novelty_factor = (1.0 - 0.08 * same_combo - 0.03 * same_genre).clamp(0.7, 1.0);
+    let novelty_factor = if p.sequel_of.is_some() {
+        1.0
+    } else {
+        (1.0 - 0.08 * same_combo - 0.03 * same_genre).clamp(0.7, 1.0)
+    };
+    // A beloved original makes the sequel easier to get right.
+    let sequel_bonus = p
+        .sequel_of
+        .and_then(|id| past.iter().find(|g| g.id == id))
+        .map(|g| ((g.metascore - 55.0) / 12.0).clamp(0.0, 4.0))
+        .unwrap_or(0.0);
 
     let bugs = estimate_bugs(content, engine, p);
     let bug_penalty = (bugs / 100.0 * 0.8).min(0.5);
     let challenge_bonus = p.challenge_quality.min(20.0);
 
     let overall = (base * (0.75 + 0.25 * fit) * theme_factor * novelty_factor * (1.0 - bug_penalty)
-        + challenge_bonus * 0.6)
+        + challenge_bonus * 0.6
+        + sequel_bonus)
         .clamp(0.0, 100.0);
 
     QualityReport {

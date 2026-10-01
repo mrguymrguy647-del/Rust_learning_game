@@ -1,4 +1,5 @@
-// Platforms. Evergreen ones (end_week: 0) never expire; consoles appear and fade over time.
+// Platforms. Evergreen ones (end_week: 0) never expire; consoles appear, peak and fade over the years
+// (52 game weeks = 1 year). A project on a platform needs the dev kit (dev_cost) and some engine features.
 [
     (id: "pc", name: "PC", kind: Pc, description: "Open platform. Anyone can publish; the audience grows steadily.",
      launch_week: 0, peak_week: 0, end_week: 0, market: 1.0, growth_per_year: 0.12,
@@ -6,4 +7,19 @@
     (id: "mobile", name: "Mobile", kind: Mobile, description: "Huge audience, low prices, impatient players.",
      launch_week: 0, peak_week: 0, end_week: 0, market: 1.8, growth_per_year: 0.2,
      store_cut: 0.30, price_mult: 0.35, dev_cost: 0, requires_features: [], min_tier: 0),
+    (id: "nimbus64", name: "Nimbus 64", kind: Console, description: "The first home console worth supporting. Cartridges, kids and a lot of plumbers.",
+     launch_week: 90, peak_week: 190, end_week: 330, market: 3.0, growth_per_year: 0.0,
+     store_cut: 0.30, price_mult: 1.2, dev_cost: 6000, requires_features: ["renderer_2d"], min_tier: 1),
+    (id: "pocket_zed", name: "Pocket Zed", kind: Handheld, description: "A handheld with a tiny screen and an enormous fan base.",
+     launch_week: 140, peak_week: 240, end_week: 400, market: 2.2, growth_per_year: 0.0,
+     store_cut: 0.30, price_mult: 0.7, dev_cost: 4000, requires_features: ["renderer_2d"], min_tier: 1),
+    (id: "hexbox", name: "Hexbox One", kind: Console, description: "Hexagonal, green and surprisingly good at online play.",
+     launch_week: 260, peak_week: 370, end_week: 540, market: 6.0, growth_per_year: 0.0,
+     store_cut: 0.30, price_mult: 1.3, dev_cost: 22000, requires_features: ["renderer_2d", "modular"], min_tier: 2),
+    (id: "quantum", name: "Quantum Station", kind: Console, description: "Real-time ray-traced everything. Your engine had better keep up.",
+     launch_week: 440, peak_week: 560, end_week: 760, market: 12.0, growth_per_year: 0.0,
+     store_cut: 0.30, price_mult: 1.4, dev_cost: 70000, requires_features: ["renderer_3d"], min_tier: 3),
+    (id: "nimbus_x", name: "Nimbus X", kind: Console, description: "The successor everybody waited for. Backward compatible, forward expensive.",
+     launch_week: 640, peak_week: 780, end_week: 960, market: 20.0, growth_per_year: 0.0,
+     store_cut: 0.30, price_mult: 1.5, dev_cost: 120000, requires_features: ["renderer_3d", "jobs"], min_tier: 3),
 ]

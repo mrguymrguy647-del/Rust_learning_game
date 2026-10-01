@@ -55,6 +55,8 @@ pub struct Project {
     pub cost_so_far: i64,
     pub weeks_in_dev: u32,
     pub sequel_of: Option<u32>,
+    /// Set when this project is DLC for a released game.
+    pub dlc_for: Option<u32>,
 }
 
 impl Default for Project {
@@ -86,6 +88,7 @@ impl Default for Project {
             cost_so_far: 0,
             weeks_in_dev: 0,
             sequel_of: None,
+            dlc_for: None,
         }
     }
 }
@@ -250,7 +253,10 @@ impl GameState {
         } else {
             cfg.name.trim().to_string()
         };
-        let hype = (((1 + self.studio.reputation.max(0)) as f32).log10() * 8.0).min(40.0);
+        let mut hype = (((1 + self.studio.reputation.max(0)) as f32).log10() * 8.0).min(40.0);
+        if cfg.sequel_of.is_some() {
+            hype = (hype + 12.0).min(100.0);
+        }
         self.project = Some(Project {
             id,
             name: name.clone(),
@@ -372,12 +378,15 @@ impl GameState {
         if !p.is_complete() {
             return Err("The game is not finished yet.".into());
         }
-        if self.pending_attempt.is_some() {
+        if p.open_blockers() > 0 || self.pending_attempt.is_some() {
             return Err("Solve the blocking challenge first.".into());
         }
         let Some(p) = self.project.take() else {
             return Err("There is nothing to release.".into());
         };
+        if let Some(parent_id) = p.dlc_for {
+            return Ok(self.release_dlc(content, p, parent_id));
+        }
 
         let q = quality::evaluate(content, &self.engine, &p, &self.games);
         let genre_name = content
@@ -393,6 +402,18 @@ impl GameState {
         let price = size.price * platform.map(|pl| pl.price_mult).unwrap_or(1.0);
         let store_cut = platform.map(|pl| pl.store_cut).unwrap_or(0.25);
         let week = self.date.week();
+
+        // Market conditions at launch, and the pull of an earlier hit for sequels.
+        let trend = self.market.demand_trend(&p.genre, &p.theme);
+        let pressure = self.market.pressure(&p.genre, week);
+        let sequel_mult = p
+            .sequel_of
+            .and_then(|id| self.games.iter().find(|g| g.id == id))
+            .map(|g| {
+                let reach = (g.units_total as f32 / (5.0 * size.base_demand.max(1.0))).min(1.0);
+                1.0 + 0.5 * reach * (g.metascore / 100.0)
+            })
+            .unwrap_or(1.0);
         let demand = sales::demand(
             content,
             &DemandInput {
@@ -404,12 +425,10 @@ impl GameState {
                 fans: self.studio.reputation,
                 metascore: meta,
                 week,
-                trend: 1.0,
+                trend: trend * pressure,
             },
         );
 
-        let sequel_bonus =
-            p.sequel_of.and_then(|id| self.games.iter().find(|g| g.id == id)).map(|g| g.metascore);
         let size_mult = [4.0, 12.0, 40.0, 150.0][p.size.index()];
         let fans_delta = ((meta - 55.0) * size_mult).round() as i64;
         self.studio.reputation = (self.studio.reputation + fans_delta).max(0);
@@ -432,10 +451,11 @@ impl GameState {
             hype: p.hype,
             price,
             store_cut,
-            launch_units: demand.launch_units,
+            launch_units: demand.launch_units * sequel_mult,
             decay: demand.decay,
             dev_cost: p.cost_so_far,
             sequel_of: p.sequel_of,
+            trend_at_release: trend,
             ..ReleasedGame::default()
         };
         let verdict = if meta >= 85.0 {
@@ -446,15 +466,64 @@ impl GameState {
             NoteKind::Warn
         };
         self.note(verdict, format!("“{}” was released. Metascore {:.0}.", game.name, meta));
-        let _ = sequel_bonus;
         self.games.push(game);
 
         self.progress.bump("games_released", 1);
+        if p.sequel_of.is_some() {
+            self.progress.bump("sequels_released", 1);
+        }
         self.progress.set_max("best_metascore", meta.round() as i64);
         if meta >= 90.0 {
             self.progress.bump("games_90_plus", 1);
         }
+        self.settle_contract(&p.genre, p.size, meta);
+        self.schedule_launch_crisis(content, id);
         Ok(self.games.len() - 1)
+    }
+
+    /// DLC: no reviews of its own, sells on the strength of the base game.
+    fn release_dlc(&mut self, content: &ContentLibrary, p: Project, parent_id: u32) -> usize {
+        let q = quality::evaluate(content, &self.engine, &p, &self.games);
+        let week = self.date.week();
+        let parent = self.games.iter().find(|g| g.id == parent_id).cloned();
+        let (parent_meta, parent_units, price, store_cut) = parent
+            .as_ref()
+            .map(|g| (g.metascore, g.units_total, g.price * 0.5, g.store_cut))
+            .unwrap_or((60.0, 0, 5.0, 0.25));
+        let meta = (0.5 * parent_meta + 0.5 * (q.overall - 6.0)).clamp(20.0, 98.0);
+        let launch = (parent_units as f32 * 0.09 * (meta / 70.0).powi(2)).max(50.0);
+        let game = ReleasedGame {
+            id: p.id,
+            name: p.name.clone(),
+            genre: p.genre.clone(),
+            theme: p.theme.clone(),
+            platform: p.platform.clone(),
+            audience: p.audience,
+            size: p.size,
+            release_week: week,
+            categories: q.categories,
+            quality: q.overall,
+            bugs: q.bugs.min(parent.as_ref().map(|g| g.bugs).unwrap_or(10.0)),
+            metascore: meta,
+            price,
+            store_cut,
+            launch_units: launch,
+            decay: 0.72,
+            dev_cost: p.cost_so_far,
+            is_dlc: true,
+            parent: Some(parent_id),
+            trend_at_release: self.market.demand_trend(&p.genre, &p.theme),
+            ..ReleasedGame::default()
+        };
+        self.note(NoteKind::Good, format!("“{}” is out! Fans of the original are queueing up.", game.name));
+        self.games.push(game);
+        if let Some(g) = self.games.iter_mut().find(|g| g.id == parent_id) {
+            g.dlc_count += 1;
+            g.on_sale = true;
+        }
+        self.studio.reputation += 40;
+        self.progress.bump("dlc_released", 1);
+        self.games.len() - 1
     }
 
     /// Estimated current bug level of the running project (for the UI).

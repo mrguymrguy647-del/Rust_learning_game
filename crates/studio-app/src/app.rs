@@ -350,6 +350,16 @@ impl App {
                     self.nav = *n;
                 }
             }
+            // `event:<id>` — start a game with a released title and force an event.
+            "event" => {
+                self.dev_simulate(60, true);
+                let content = self.content.clone();
+                self.review_popup = None;
+                if let Some(game) = self.game.as_mut() {
+                    let target = game.games.first().map(|g| g.id);
+                    game.force_event(&content, tail, target);
+                }
+            }
             "challenge" => {
                 self.new_game.studio = "Ferris Games".into();
                 self.start_new_game();
@@ -391,7 +401,7 @@ impl App {
         }
         let _ = game.take_loan(&content, 20_000);
         for _ in 0..8 {
-            game.advance_week(&content);
+            game.advance_week_auto(&content);
         }
     }
 
@@ -428,11 +438,11 @@ impl App {
                 }
                 game.pending_attempt = None;
             }
-            game.advance_week(&content);
+            game.advance_week_auto(&content);
         }
         if release && game.release_project(&content).is_ok() {
             for _ in 0..6 {
-                game.advance_week(&content);
+                game.advance_week_auto(&content);
             }
             self.review_popup = Some(0);
         }
@@ -573,7 +583,7 @@ impl App {
         };
         let feed_len = game.feed.len();
         let was_over = game.game_over.is_some();
-        game.advance_week(&content);
+        game.advance_week_auto(&content);
 
         // Surface the newest bad/good news as toasts so the player notices without opening the dashboard.
         let fresh: Vec<_> = game.feed.iter().skip(feed_len.min(game.feed.len())).cloned().collect();
@@ -594,8 +604,12 @@ impl App {
             self.weeks_since_autosave = 0;
             self.autosave();
         }
-        if over || blocked.is_some() {
+        let event_waiting = self.game.as_ref().is_some_and(|g| g.events.pending.is_some());
+        if over || blocked.is_some() || event_waiting {
             self.speed = Speed::Paused;
+        }
+        if event_waiting {
+            self.autosave();
         }
         if let Some(a) = blocked {
             if self.challenge.is_none() {
@@ -649,6 +663,7 @@ impl App {
                 Nav::Engine => crate::screens::engine::show(self, ui),
                 Nav::Staff => crate::screens::staff::show(self, ui),
                 Nav::Studio => crate::screens::studio::show(self, ui),
+                Nav::Market => crate::screens::market::show(self, ui),
                 Nav::Library => crate::screens::library::show(self, ui),
                 Nav::Skills => crate::screens::skills::show(self, ui),
                 Nav::Practice => crate::screens::practice::show(self, ui),
@@ -659,6 +674,7 @@ impl App {
 
         self.save_dialog(ui.ctx());
         self.exit_dialog(ui.ctx());
+        crate::screens::events::show(self, ui.ctx());
         crate::screens::reviews::show_popup(self, ui.ctx());
         crate::screens::gameover::show(self, ui.ctx());
     }
@@ -920,6 +936,15 @@ mod tests {
             app.nav = nav;
             run_frames(&mut app, 2);
         }
+        // Events of every kind on screen.
+        for id in ["hotfix_crash", "pub_quirky", "jam_rusty", "devcon", "coffee_machine"] {
+            app.dev_jump(&format!("event:{id}"));
+            assert!(app.game.as_ref().unwrap().events.pending.is_some(), "{id}");
+            for nav in [Nav::Dashboard, Nav::Market, Nav::Library, Nav::Studio, Nav::Projects] {
+                app.nav = nav;
+                run_frames(&mut app, 2);
+            }
+        }
         // After a release, with the review window open.
         app.dev_simulate(60, true);
         assert!(app.review_popup.is_some());
@@ -942,6 +967,33 @@ mod tests {
             game.game_over = Some(studio_core::sim::economy::GameOver { week: 5, reason: "test".into() });
         }
         run_frames(&mut app, 2);
+        let _ = std::fs::remove_dir_all(app.paths.root());
+    }
+
+    #[test]
+    fn choosing_a_hotfix_event_choice_opens_a_hotfix_challenge_and_a_jam_is_timed() {
+        let mut app = test_app("events");
+        app.dev_jump("event:hotfix_crash");
+        let content = app.content.clone();
+        // Pick the "hotfix it yourself" choice the way the window does.
+        let outcome = app.game.as_mut().unwrap().resolve_event(&content, 0).unwrap();
+        assert!(matches!(outcome, studio_core::sim::events::EventOutcome::Challenge(_)));
+        let a = app.game.as_ref().unwrap().pending_attempt.clone().unwrap();
+        app.open_challenge(&a.challenge_id, a.context.clone());
+        assert!(matches!(app.challenge.as_ref().unwrap().attempt.context, ChallengeContext::Hotfix { .. }));
+        run_frames(&mut app, 2);
+        app.challenge = None;
+
+        app.dev_jump("event:jam_rusty");
+        app.game.as_mut().unwrap().resolve_event(&content, 0).unwrap();
+        let a = app.game.as_ref().unwrap().pending_attempt.clone().unwrap();
+        assert_eq!(a.time_limit_secs, Some(720));
+        app.open_challenge(&a.challenge_id, a.context.clone());
+        // Run out the clock: the jam ends and no attempt is left pending.
+        app.challenge.as_mut().unwrap().attempt.elapsed_secs = 10_000.0;
+        run_frames(&mut app, 2);
+        assert!(app.challenge.is_none(), "an expired jam closes the challenge");
+        assert!(app.game.as_ref().unwrap().pending_attempt.is_none());
         let _ = std::fs::remove_dir_all(app.paths.root());
     }
 

@@ -23,6 +23,8 @@ pub struct ProjectForm {
     pub focus: Weights,
     /// Follow the genre's ideal split until the player moves a slider.
     pub focus_customized: bool,
+    /// Set when this form was opened from "Make a sequel".
+    pub sequel_of: Option<u32>,
 }
 
 impl ProjectForm {
@@ -37,6 +39,22 @@ impl ProjectForm {
             size: ProjectSize::Small,
             focus: genre.map(|g| g.ideal).unwrap_or(Weights::EVEN),
             focus_customized: false,
+            sequel_of: None,
+        }
+    }
+
+    /// A form pre-filled from a configuration (used for sequels).
+    pub fn from_config(cfg: &ProjectConfig) -> ProjectForm {
+        ProjectForm {
+            name: cfg.name.clone(),
+            genre: cfg.genre.clone(),
+            theme: cfg.theme.clone(),
+            platform: cfg.platform.clone(),
+            audience: cfg.audience,
+            size: cfg.size,
+            focus: cfg.focus,
+            focus_customized: true,
+            sequel_of: cfg.sequel_of,
         }
     }
 
@@ -49,7 +67,7 @@ impl ProjectForm {
             audience: self.audience,
             size: self.size,
             focus: self.focus,
-            sequel_of: None,
+            sequel_of: self.sequel_of,
         }
     }
 }
@@ -410,6 +428,54 @@ fn show_active(app: &mut App, ui: &mut egui::Ui) {
             }
         });
     });
+
+    // ---- marketing and publisher contract
+    ui.add_space(6.0);
+    let mut buy: Option<String> = None;
+    if let Some(game) = app.game.as_ref() {
+        let contract = game.events.contract.clone();
+        let money = game.studio.money;
+        let tier = game.studio.tier;
+        ui.columns(2, |cols| {
+            widgets::card(&mut cols[0], |ui| {
+                widgets::section(ui, "Marketing");
+                widgets::dim(ui, "Hype raises launch sales. Returns shrink as hype grows.");
+                for m in &content.marketing {
+                    let locked = tier < m.min_tier;
+                    let label = format!("{} — {} (+{:.0} hype)", m.name, fmt::money(m.cost), m.hype);
+                    let r = ui.add_enabled(!locked && money >= m.cost, egui::Button::new(label));
+                    if r.on_hover_text(&m.description).clicked() {
+                        buy = Some(m.id.clone());
+                    }
+                }
+            });
+            widgets::card(&mut cols[1], |ui| {
+                widgets::section(ui, "Publisher contract");
+                match &contract {
+                    None => widgets::dim(ui, "No contract. Publishers sometimes send offers: say yes for an advance and a bonus on delivery."),
+                    Some(c) => {
+                        ui.label(RichText::new(&c.publisher).strong());
+                        let genre = if c.genre.is_empty() {
+                            "any genre".to_string()
+                        } else {
+                            content.genre(&c.genre).map(|g| g.name.clone()).unwrap_or_else(|| c.genre.clone())
+                        };
+                        ui.label(format!("Deliver a {genre} game, {} or bigger, with Metascore {:.0}+.", c.min_size.label(), c.min_meta));
+                        let weeks_left = c.deadline_week.saturating_sub(game.date.week());
+                        ui.label(RichText::new(format!("Deadline in {weeks_left} week(s). Bonus: {}", fmt::money(c.bonus))).color(if weeks_left < 8 { pal.warn } else { pal.text }));
+                    }
+                }
+            });
+        });
+    }
+    if let Some(id) = buy {
+        if let Some(g) = app.game.as_mut() {
+            match g.buy_marketing(&content, &id) {
+                Ok(gain) => app.toast(crate::app::ToastKind::Good, format!("Hype +{gain:.0}")),
+                Err(e) => app.toast(crate::app::ToastKind::Warn, e),
+            }
+        }
+    }
 
     ui.add_space(8.0);
     if app.confirm_cancel_project {

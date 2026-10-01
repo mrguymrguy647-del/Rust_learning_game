@@ -413,3 +413,152 @@ pub struct NamePool {
 }
 
 identified!(TraitDef);
+
+/// A rival studio that releases games and competes for awards.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CompetitorDef {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub tagline: String,
+    /// 0..1: how good their games usually are.
+    pub strength: f32,
+    pub genres: Vec<String>,
+    /// Average weeks between releases.
+    pub interval_weeks: u32,
+}
+
+/// A marketing campaign.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MarketingDef {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub cost: i64,
+    pub hype: f32,
+    #[serde(default)]
+    pub min_tier: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EventKind {
+    Decision,
+    Crunch,
+    Conference,
+    Publisher,
+    GameJam,
+    Hotfix,
+}
+
+/// Conditions that make an event eligible.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Cond {
+    HasProject,
+    NoProject,
+    HasReleasedGame,
+    NoContract,
+    MinMoney(i64),
+    MinFans(i64),
+    MinStaff(u32),
+}
+
+/// Immediate consequences of a choice.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Effect {
+    Money(i64),
+    Fans(i64),
+    /// Added to every employee's morale.
+    Morale(f32),
+    /// Added to the current project's hype.
+    Hype(f32),
+    /// Fraction of the current project's total work added (negative = lost).
+    Work(f32),
+    CrunchBugs(f32),
+    Research(i64),
+    Xp(u32),
+    /// Change the bug level of the event's target game.
+    TargetBugs(f32),
+    /// Multiply the target game's sales.
+    TargetSalesMult(f32),
+}
+
+/// Special behaviour of a choice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum ChoiceAction {
+    #[default]
+    None,
+    /// Open a (blocking) hotfix challenge for the target game.
+    StartHotfix,
+    /// Open a timed jam challenge.
+    StartJam,
+    /// Accept the event's publisher contract.
+    AcceptContract,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EventChoice {
+    pub label: String,
+    #[serde(default)]
+    pub detail: String,
+    /// Money the player must pay to pick this option.
+    #[serde(default)]
+    pub cost: i64,
+    #[serde(default)]
+    pub effects: Vec<Effect>,
+    #[serde(default)]
+    pub action: ChoiceAction,
+}
+
+/// A publisher contract offered by an event.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContractTemplate {
+    pub publisher: String,
+    /// Required genre id; empty = any genre.
+    #[serde(default)]
+    pub genre: String,
+    pub min_size: crate::sim::model::ProjectSize,
+    pub weeks: u32,
+    pub advance: i64,
+    pub bonus: i64,
+    pub min_meta: f32,
+}
+
+fn one() -> f32 {
+    1.0
+}
+
+fn any_tier() -> usize {
+    99
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EventDef {
+    pub id: String,
+    pub kind: EventKind,
+    pub title: String,
+    pub text: String,
+    #[serde(default = "one")]
+    pub weight: f32,
+    #[serde(default)]
+    pub min_tier: usize,
+    #[serde(default = "any_tier")]
+    pub max_tier: usize,
+    #[serde(default)]
+    pub min_week: u32,
+    #[serde(default)]
+    pub requires: Vec<Cond>,
+    #[serde(default)]
+    pub cooldown_weeks: u32,
+    pub choices: Vec<EventChoice>,
+    #[serde(default)]
+    pub contract: Option<ContractTemplate>,
+    /// Time limit of a jam challenge, in minutes.
+    #[serde(default)]
+    pub jam_minutes: u32,
+    #[serde(default)]
+    pub jam_prize: i64,
+    #[serde(default)]
+    pub jam_fans: i64,
+}
+
+identified!(CompetitorDef, MarketingDef, EventDef);

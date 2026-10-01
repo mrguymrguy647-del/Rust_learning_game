@@ -1,0 +1,13 @@
+// Marketing campaigns raise a project's hype (up to 100). Returns diminish as hype grows.
+[
+    (id: "social", name: "Social media push", description: "Memes, devlogs and a very online community manager.",
+     cost: 500, hype: 6.0, min_tier: 0),
+    (id: "trailer", name: "Trailer", description: "Ninety seconds of the best bits, set to dramatic music.",
+     cost: 4000, hype: 14.0, min_tier: 0),
+    (id: "press_tour", name: "Press tour", description: "Previews, interviews and a lot of airport coffee.",
+     cost: 12000, hype: 22.0, min_tier: 1),
+    (id: "expo_booth", name: "Expo booth", description: "A playable demo in front of thousands of eager hands.",
+     cost: 25000, hype: 28.0, min_tier: 2),
+    (id: "tv_campaign", name: "Billboards & TV", description: "Your logo on a building. Your mother is proud.",
+     cost: 90000, hype: 38.0, min_tier: 3),
+]

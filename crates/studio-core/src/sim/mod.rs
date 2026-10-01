@@ -3,10 +3,13 @@
 pub mod challenge_flow;
 pub mod economy;
 pub mod engine;
+pub mod events;
 pub mod hiring;
 pub mod library;
+pub mod market;
 pub mod model;
 pub mod notify;
+pub mod postlaunch;
 pub mod progress;
 pub mod project;
 pub mod quality;

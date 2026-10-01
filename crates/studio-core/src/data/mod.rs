@@ -19,8 +19,9 @@ use serde::de::DeserializeOwned;
 
 pub use challenge::{BookLink, Challenge, ChallengeKind, Check, Quiz, Rewards};
 pub use game::{
-    AchievementDef, Balance, CodexEntry, EngineModuleDef, ErrorExplainer, GenreDef, Identified, NamePool,
-    OutletDef, PlatformDef, PlatformKind, SizeDef, ThemeDef, TierDef, TopicDef, TraitDef,
+    AchievementDef, Balance, ChoiceAction, CodexEntry, CompetitorDef, Cond, ContractTemplate, Effect,
+    EngineModuleDef, ErrorExplainer, EventChoice, EventDef, EventKind, GenreDef, Identified, MarketingDef,
+    NamePool, OutletDef, PlatformDef, PlatformKind, SizeDef, ThemeDef, TierDef, TopicDef, TraitDef,
 };
 
 mod embedded {
@@ -62,6 +63,9 @@ pub struct ContentLibrary {
     pub outlets: Vec<OutletDef>,
     pub engine_modules: Vec<EngineModuleDef>,
     pub traits: Vec<TraitDef>,
+    pub competitors: Vec<CompetitorDef>,
+    pub marketing: Vec<MarketingDef>,
+    pub events: Vec<EventDef>,
     pub names: NamePool,
     pub balance: Balance,
     /// Files that failed to parse. Embedded content must have none (a unit test enforces it).
@@ -131,6 +135,13 @@ impl ContentLibrary {
             ("game", "platforms.ron") => {
                 replaced = merge_list(&mut self.platforms, parse(src, &mut self.issues))
             }
+            ("game", "competitors.ron") => {
+                replaced = merge_list(&mut self.competitors, parse(src, &mut self.issues))
+            }
+            ("game", "marketing.ron") => {
+                replaced = merge_list(&mut self.marketing, parse(src, &mut self.issues))
+            }
+            ("game", "events.ron") => replaced = merge_list(&mut self.events, parse(src, &mut self.issues)),
             ("game", "traits.ron") => replaced = merge_list(&mut self.traits, parse(src, &mut self.issues)),
             ("game", "staff_names.ron") => match ron::from_str::<NamePool>(&src.text) {
                 Ok(n) => self.names = n,
@@ -171,6 +182,10 @@ impl ContentLibrary {
 
     pub fn trait_def(&self, id: &str) -> Option<&TraitDef> {
         self.traits.iter().find(|t| t.id == id)
+    }
+
+    pub fn event(&self, id: &str) -> Option<&EventDef> {
+        self.events.iter().find(|e| e.id == id)
     }
 
     pub fn genre(&self, id: &str) -> Option<&GenreDef> {

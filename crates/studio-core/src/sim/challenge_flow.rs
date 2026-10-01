@@ -53,6 +53,10 @@ pub struct Attempt {
     pub hints_paid: i64,
     pub quiz_wrong_guesses: u32,
     pub contractor: bool,
+    /// Game-jam countdown (real seconds). `None` = untimed.
+    pub time_limit_secs: Option<u32>,
+    /// Real seconds spent on the attempt (updated by the UI).
+    pub elapsed_secs: f32,
 }
 
 impl Attempt {
@@ -67,6 +71,8 @@ impl Attempt {
             hints_paid: 0,
             quiz_wrong_guesses: 0,
             contractor: false,
+            time_limit_secs: None,
+            elapsed_secs: 0.0,
         }
     }
 
@@ -257,8 +263,15 @@ impl GameState {
             }
         }
 
-        if matches!(attempt.context, ChallengeContext::Project) {
-            self.apply_blocker_result(&challenge.id, &summary);
+        match &attempt.context {
+            ChallengeContext::Project => self.apply_blocker_result(&challenge.id, &summary),
+            ChallengeContext::Hotfix { game_id } => {
+                self.apply_hotfix_result(*game_id, attempt.contractor, already_solved)
+            }
+            ChallengeContext::Jam { event_id } => {
+                self.apply_jam_result(content, event_id, attempt, already_solved)
+            }
+            _ => {}
         }
 
         for a in self.progress.check_achievements(&content.achievements) {

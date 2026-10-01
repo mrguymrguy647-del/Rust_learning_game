@@ -49,6 +49,15 @@ pub struct ReleasedGame {
     pub patches: u32,
     pub sequel_of: Option<u32>,
     pub fans_acc: f32,
+    /// DLC entries have no reviews of their own and point at the base game.
+    pub is_dlc: bool,
+    pub parent: Option<u32>,
+    pub dlc_count: u32,
+    /// Genre/theme trend at release (sales follow the trend relative to this).
+    pub trend_at_release: f32,
+    /// Temporary sales boost (patch, hotfix, award): remaining weeks and multiplier.
+    pub boost_weeks: u32,
+    pub boost_mult: f32,
 }
 
 impl Default for ReleasedGame {
@@ -80,6 +89,12 @@ impl Default for ReleasedGame {
             patches: 0,
             sequel_of: None,
             fans_acc: 0.0,
+            is_dlc: false,
+            parent: None,
+            dlc_count: 0,
+            trend_at_release: 1.0,
+            boost_weeks: 0,
+            boost_mult: 1.0,
         }
     }
 }

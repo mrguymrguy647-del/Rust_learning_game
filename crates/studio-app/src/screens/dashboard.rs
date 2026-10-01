@@ -51,13 +51,42 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             .corner_radius(8)
             .inner_margin(egui::Margin::same(10))
             .show(ui, |ui| {
-                ui.label(RichText::new(format!("Development is blocked: {title}")).strong().color(pal.warn));
+                ui.label(
+                    RichText::new(format!(
+                        "{}: {title}",
+                        match a.context {
+                            studio_core::sim::ChallengeContext::Hotfix { .. } => "Crisis, a hotfix is needed",
+                            studio_core::sim::ChallengeContext::Jam { .. } => "Game jam in progress",
+                            _ => "Development is blocked",
+                        }
+                    ))
+                    .strong()
+                    .color(pal.warn),
+                );
                 if widgets::primary_button(ui, "Resume the challenge").clicked() {
                     resume = Some((a.challenge_id.clone(), a.context.clone()));
                 }
             });
         ui.add_space(8.0);
     }
+
+    if let Some(c) = &game.events.contract {
+        let weeks_left = c.deadline_week.saturating_sub(game.date.week());
+        ui.label(
+            RichText::new(format!(
+                "Contract: {} wants a Metascore {:.0}+ game within {weeks_left} week(s) — bonus {}.",
+                c.publisher,
+                c.min_meta,
+                fmt::money(c.bonus)
+            ))
+            .color(if weeks_left < 8 { pal.warn } else { pal.info }),
+        );
+    }
+    if let Some(p) = &game.patch {
+        let name = game.games.iter().find(|g| g.id == p.game_id).map(|g| g.name.as_str()).unwrap_or("a game");
+        ui.label(RichText::new(format!("Patching “{name}”: {} week(s) left.", p.weeks_left)).color(pal.info));
+    }
+    ui.add_space(4.0);
 
     ui.columns(3, |cols| {
         // ---- studio

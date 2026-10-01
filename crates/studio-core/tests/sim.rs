@@ -17,6 +17,13 @@ fn new_state(lib: &ContentLibrary) -> GameState {
     GameState::new_game(lib, "Test Studio", "Tester", Difficulty::Normal, Some(42))
 }
 
+/// Suppress random events so a test can assert exact money/morale numbers.
+fn quiet_events(lib: &ContentLibrary, st: &mut GameState) {
+    for e in &lib.events {
+        st.events.cooldowns.insert(e.id.clone(), u32::MAX);
+    }
+}
+
 fn puzzle_config(lib: &ContentLibrary) -> ProjectConfig {
     let genre = lib.genres.iter().find(|g| g.id == "puzzle").unwrap();
     ProjectConfig {
@@ -41,7 +48,7 @@ fn run_until(lib: &ContentLibrary, st: &mut GameState, max_weeks: u32, done: imp
             solve(lib, st, &attempt);
             continue;
         }
-        st.advance_week(lib);
+        st.advance_week_auto(lib);
     }
 }
 
@@ -83,9 +90,10 @@ fn builtin_balance_loads_with_all_four_sizes() {
 fn idle_weeks_cost_rent_and_nothing_else() {
     let lib = content();
     let mut st = new_state(&lib);
+    quiet_events(&lib, &mut st);
     let start = st.studio.money;
     for _ in 0..10 {
-        st.advance_week(&lib);
+        st.advance_week_auto(&lib);
     }
     let rent = lib.tier(0).unwrap().rent;
     assert_eq!(st.date.week(), 10);
@@ -98,7 +106,7 @@ fn difficulty_scales_costs() {
     let lib = content();
     let cost = |d| {
         let mut st = GameState::new_game(&lib, "S", "F", d, Some(1));
-        st.advance_week(&lib);
+        st.advance_week_auto(&lib);
         lib.balance.start_money - st.studio.money
     };
     assert!(cost(Difficulty::Easy) < cost(Difficulty::Normal));
@@ -155,7 +163,7 @@ fn a_small_game_goes_from_idea_to_release_with_blockers() {
         if st.project.as_ref().is_some_and(|p| p.is_complete()) {
             break;
         }
-        st.advance_week(&lib);
+        st.advance_week_auto(&lib);
         if let Some(p) = &st.project {
             if phases.last() != Some(&p.phase()) {
                 phases.push(p.phase());
@@ -201,7 +209,7 @@ fn time_stops_while_a_challenge_is_pending() {
     let mut st = new_state(&lib);
     st.start_project(&lib, puzzle_config(&lib)).unwrap();
     for _ in 0..200 {
-        st.advance_week(&lib);
+        st.advance_week_auto(&lib);
         if st.pending_attempt.is_some() {
             break;
         }
@@ -221,13 +229,14 @@ fn crunch_is_faster_but_costs_morale_and_adds_bugs() {
     let lib = content();
     let run = |crunch: bool| {
         let mut st = new_state(&lib);
+        quiet_events(&lib, &mut st);
         st.start_project(&lib, puzzle_config(&lib)).unwrap();
         st.set_crunch(crunch);
         for _ in 0..6 {
             if st.pending_attempt.is_some() {
                 break;
             }
-            st.advance_week(&lib);
+            st.advance_week_auto(&lib);
         }
         st
     };
@@ -245,14 +254,14 @@ fn going_broke_triggers_warnings_then_game_over() {
     st.studio.money = -10;
     let limit = lib.balance.bankruptcy_weeks;
     for _ in 0..limit - 1 {
-        st.advance_week(&lib);
+        st.advance_week_auto(&lib);
         assert!(st.game_over.is_none());
     }
     assert!(st.feed.iter().any(|n| n.text.contains("Bankruptcy warning")));
-    st.advance_week(&lib);
+    st.advance_week_auto(&lib);
     assert!(st.game_over.is_some());
     let week = st.date.week();
-    st.advance_week(&lib);
+    st.advance_week_auto(&lib);
     assert_eq!(st.date.week(), week, "the clock stops after game over");
 }
 
@@ -261,11 +270,11 @@ fn recovering_cash_resets_the_bankruptcy_clock() {
     let lib = content();
     let mut st = new_state(&lib);
     st.studio.money = -10;
-    st.advance_week(&lib);
-    st.advance_week(&lib);
+    st.advance_week_auto(&lib);
+    st.advance_week_auto(&lib);
     assert_eq!(st.debt_weeks, 2);
     st.studio.money = 5_000;
-    st.advance_week(&lib);
+    st.advance_week_auto(&lib);
     assert_eq!(st.debt_weeks, 0);
 }
 
@@ -279,7 +288,7 @@ fn full_game_state_round_trips_through_a_save_file() {
     run_until(&lib, &mut st, 10, |_| false);
     st.start_project(&lib, puzzle_config(&lib)).unwrap();
     for _ in 0..40 {
-        st.advance_week(&lib);
+        st.advance_week_auto(&lib);
         if st.pending_attempt.is_some() {
             break;
         }
@@ -297,8 +306,8 @@ fn full_game_state_round_trips_through_a_save_file() {
         solve(&lib, &mut b, &att);
     }
     for _ in 0..5 {
-        a.advance_week(&lib);
-        b.advance_week(&lib);
+        a.advance_week_auto(&lib);
+        b.advance_week_auto(&lib);
     }
     assert_eq!(a, b);
     let _ = std::fs::remove_dir_all(dir);

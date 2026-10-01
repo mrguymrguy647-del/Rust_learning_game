@@ -1,0 +1,197 @@
+#![enable(implicit_some)]
+// Random events. `kind` decides special handling:
+//   Decision / Crunch / Conference  - plain choices with effects
+//   Hotfix   - a released game has a crisis: a choice may open a Rust challenge
+//   GameJam  - a choice may open a TIMED Rust challenge
+//   Publisher - a choice accepts a contract (see `contract`)
+// Text placeholders: {game} (target game), {studio}.
+[
+    // ------------------------------------------------------------------ everyday decisions
+    (id: "press_interview", kind: Decision, title: "Interview request",
+     text: "A games magazine wants to interview you about {game}. Free publicity — if you can find the time.",
+     weight: 1.0, requires: [HasReleasedGame], cooldown_weeks: 20,
+     choices: [
+         (label: "Do the interview", detail: "+40 fans, hype for your next project", effects: [Fans(40), Hype(8.0)]),
+         (label: "Politely decline", detail: "Back to work", effects: []),
+     ]),
+    (id: "viral_clip", kind: Decision, title: "Your game went viral!",
+     text: "A streamer's clip of {game} made it to the front page of the internet. Downloads are spiking!",
+     weight: 0.5, requires: [HasReleasedGame], cooldown_weeks: 40,
+     choices: [
+         (label: "Ride the wave", detail: "+120 fans, sales bump for {game}", effects: [Fans(120), TargetSalesMult(1.15)]),
+     ]),
+    (id: "power_outage", kind: Decision, title: "Power outage",
+     text: "A storm knocked out the power for two days. Nobody saved.",
+     weight: 0.8, requires: [HasProject], cooldown_weeks: 30,
+     choices: [
+         (label: "Buy backup power ($2,000)", detail: "Lose nothing this time", cost: 2000, effects: []),
+         (label: "Wing it", detail: "Lose 4% of the project's progress", effects: [Work(-0.04)]),
+     ]),
+    (id: "coffee_machine", kind: Decision, title: "The coffee machine broke",
+     text: "Morale is plummeting. Developers are looking at the kettle with suspicion.",
+     weight: 1.0, cooldown_weeks: 25,
+     choices: [
+         (label: "Buy a new one ($400)", detail: "Morale +8 for everyone", cost: 400, effects: [Morale(8.0)]),
+         (label: "They will cope", detail: "Morale -6 for everyone", effects: [Morale(-6.0)]),
+     ]),
+    (id: "tax_audit", kind: Decision, title: "Tax audit",
+     text: "The tax office would like a word about your receipts.",
+     weight: 0.6, min_tier: 1, requires: [MinMoney(5000)], cooldown_weeks: 60,
+     choices: [
+         (label: "Hire an accountant ($1,500)", detail: "Smooth sailing", cost: 1500, effects: []),
+         (label: "Handle it yourself", detail: "A messy afternoon and a $4,000 fine", effects: [Money(-4000), Morale(-3.0)]),
+     ]),
+    (id: "crunch_offer", kind: Crunch, title: "An investor wants it sooner",
+     text: "An investor visited the office and suggests your team could 'push a little harder' to hit the date.",
+     weight: 1.0, requires: [HasProject], cooldown_weeks: 25,
+     choices: [
+         (label: "Crunch for a month", detail: "+6% progress, but morale -15 and more bugs", effects: [Work(0.06), CrunchBugs(3.0), Morale(-15.0)]),
+         (label: "Stand your ground", detail: "Morale +3, keep the schedule", effects: [Morale(3.0)]),
+     ]),
+    (id: "poaching", kind: Decision, title: "A rival is poaching your staff",
+     text: "A competitor is offering your people more money. Spirits are shaky.",
+     weight: 0.7, min_tier: 1, requires: [MinStaff(2)], cooldown_weeks: 40,
+     choices: [
+         (label: "Match the offers ($3,000 in bonuses)", detail: "Morale +10", cost: 3000, effects: [Morale(10.0)]),
+         (label: "Let people decide", detail: "Morale -10", effects: [Morale(-10.0)]),
+     ]),
+    (id: "fan_art", kind: Decision, title: "Fan art!",
+     text: "The community drew your characters. Your team is genuinely moved.",
+     weight: 0.8, requires: [HasReleasedGame], cooldown_weeks: 30,
+     choices: [(label: "Share it everywhere", detail: "+60 fans, morale +6", effects: [Fans(60), Morale(6.0)])]),
+    (id: "piracy", kind: Decision, title: "Your game is being pirated",
+     text: "{game} appeared on a shady download site, three days after launch.",
+     weight: 0.6, requires: [HasReleasedGame], cooldown_weeks: 40,
+     choices: [
+         (label: "Add copy protection ($2,000)", detail: "Protects the rest of the sales", cost: 2000, effects: []),
+         (label: "Call it free marketing", detail: "+20 fans, but sales of {game} drop 8%", effects: [Fans(20), TargetSalesMult(0.92)]),
+     ]),
+    (id: "investor_visit", kind: Decision, title: "An investor visits",
+     text: "A friendly investor wants a look at what you are building.",
+     weight: 0.7, min_tier: 1, requires: [HasProject], cooldown_weeks: 50,
+     choices: [
+         (label: "Show the playable build", detail: "+$8,000 and a hype boost", effects: [Money(8000), Hype(10.0)]),
+         (label: "Keep it under wraps", detail: "Nothing happens", effects: []),
+     ]),
+    (id: "office_cat", kind: Decision, title: "A cat moved in",
+     text: "An orange cat wandered into the office and refuses to leave. It sits on the build server.",
+     weight: 0.5, cooldown_weeks: 80,
+     choices: [
+         (label: "Adopt it ($200)", detail: "Morale +10 for everyone", cost: 200, effects: [Morale(10.0)]),
+         (label: "Shoo it away", detail: "Morale -3", effects: [Morale(-3.0)]),
+     ]),
+    (id: "intern_program", kind: Decision, title: "University partnership",
+     text: "A university offers interns to help with your engine research.",
+     weight: 0.7, min_week: 20, cooldown_weeks: 60,
+     choices: [
+         (label: "Take the interns", detail: "+30 research points", effects: [Research(30)]),
+         (label: "No time for mentoring", detail: "", effects: []),
+     ]),
+    (id: "bug_bounty", kind: Decision, title: "Security researcher",
+     text: "Someone found a security hole in {game} and is giving you the chance to fix it quietly.",
+     weight: 0.5, requires: [HasReleasedGame], cooldown_weeks: 50,
+     choices: [
+         (label: "Pay a bounty ($2,000)", detail: "+30 fans for being decent", cost: 2000, effects: [Fans(30)]),
+         (label: "Ignore the email", detail: "-30 fans when it goes public", effects: [Fans(-30)]),
+     ]),
+    (id: "rust_meetup", kind: Decision, title: "Rust meetup invitation",
+     text: "The local Rust meetup invites you to give a talk about how your studio uses ownership and borrowing.",
+     weight: 0.8, cooldown_weeks: 45,
+     choices: [
+         (label: "Give the talk", detail: "+40 XP, +30 fans, morale +4", effects: [Xp(40), Fans(30), Morale(4.0)]),
+         (label: "Send a slide deck", detail: "+10 XP", effects: [Xp(10)]),
+     ]),
+
+    // ------------------------------------------------------------------ conferences
+    (id: "indie_expo", kind: Conference, title: "IndieExpo",
+     text: "A friendly regional expo for small studios. Tables are cheap and everyone brings snacks.",
+     weight: 0.8, max_tier: 1, cooldown_weeks: 40,
+     choices: [
+         (label: "Show your work ($500)", detail: "Hype +12 for the current project, +30 fans", cost: 500, effects: [Hype(12.0), Fans(30)]),
+         (label: "Stay home", detail: "", effects: []),
+     ]),
+    (id: "devcon", kind: Conference, title: "Game Developers Convention",
+     text: "The big industry event of the year. Publishers, press and hiring managers all in one hall.",
+     weight: 0.6, min_tier: 1, cooldown_weeks: 52,
+     choices: [
+         (label: "Rent a booth ($5,000)", detail: "Hype +25, +80 fans", cost: 5000, effects: [Hype(25.0), Fans(80)]),
+         (label: "Attend the talks ($1,500)", detail: "+40 research points, +30 XP", cost: 1500, effects: [Research(40), Xp(30)]),
+         (label: "Skip it", detail: "", effects: []),
+     ]),
+
+    // ------------------------------------------------------------------ publisher deals
+    (id: "pub_quirky", kind: Publisher, title: "Publisher offer: Quirky Games",
+     text: "Quirky Games Publishing loves puzzle games. They offer an advance for a Small (or bigger) puzzle game delivered in 30 weeks with a Metascore of 60+.",
+     weight: 0.8, cooldown_weeks: 40, requires: [NoContract],
+     contract: (publisher: "Quirky Games Publishing", genre: "puzzle", min_size: Small, weeks: 30, advance: 6000, bonus: 12000, min_meta: 60.0),
+     choices: [
+         (label: "Accept the deal", detail: "$6,000 now, $12,000 on delivery. Miss it and you repay half the advance.", action: AcceptContract, effects: []),
+         (label: "Decline", detail: "", effects: []),
+     ]),
+    (id: "pub_bigbox", kind: Publisher, title: "Publisher offer: BigBox",
+     text: "BigBox Publishing wants an action game, Medium or bigger, within 45 weeks and a Metascore of 70+.",
+     weight: 0.7, min_tier: 1, cooldown_weeks: 50, requires: [NoContract],
+     contract: (publisher: "BigBox Publishing", genre: "action", min_size: Medium, weeks: 45, advance: 30000, bonus: 60000, min_meta: 70.0),
+     choices: [
+         (label: "Accept the deal", detail: "$30,000 now, $60,000 on delivery.", action: AcceptContract, effects: []),
+         (label: "Decline", detail: "", effects: []),
+     ]),
+    (id: "pub_gaia", kind: Publisher, title: "Publisher offer: Gaia Interactive",
+     text: "Gaia Interactive wants a flagship title of any genre: Large or bigger, delivered within 80 weeks with a Metascore of 75+.",
+     weight: 0.6, min_tier: 2, cooldown_weeks: 70, requires: [NoContract],
+     contract: (publisher: "Gaia Interactive", genre: "", min_size: Large, weeks: 80, advance: 150000, bonus: 350000, min_meta: 75.0),
+     choices: [
+         (label: "Accept the deal", detail: "$150,000 now, $350,000 on delivery.", action: AcceptContract, effects: []),
+         (label: "Decline", detail: "", effects: []),
+     ]),
+    (id: "pub_roguelike", kind: Publisher, title: "Publisher offer: Pixel Press",
+     text: "Pixel Press is hunting for the next roguelike hit. Small or bigger, 35 weeks, Metascore 65+.",
+     weight: 0.7, cooldown_weeks: 45, requires: [NoContract],
+     contract: (publisher: "Pixel Press", genre: "roguelike", min_size: Small, weeks: 35, advance: 8000, bonus: 20000, min_meta: 65.0),
+     choices: [
+         (label: "Accept the deal", detail: "$8,000 now, $20,000 on delivery.", action: AcceptContract, effects: []),
+         (label: "Decline", detail: "", effects: []),
+     ]),
+
+    // ------------------------------------------------------------------ game jams (timed challenges)
+    (id: "jam_rusty", kind: GameJam, title: "Rusty Jam",
+     text: "A weekend game jam! Solve a coding problem against the clock to win fans and prize money.",
+     weight: 0.9, cooldown_weeks: 35, jam_minutes: 12, jam_prize: 2500, jam_fans: 80,
+     choices: [
+         (label: "Join the jam (timed challenge)", detail: "12 minutes. Prize up to $2,500 and 80 fans — faster is better.", action: StartJam, effects: []),
+         (label: "Skip it", detail: "", effects: []),
+     ]),
+    (id: "jam_borrow", kind: GameJam, title: "Borrow Checker Jam",
+     text: "Fight the borrow checker for glory. Bring snacks and a sense of humour.",
+     weight: 0.7, min_tier: 1, cooldown_weeks: 45, jam_minutes: 15, jam_prize: 6000, jam_fans: 150,
+     choices: [
+         (label: "Join the jam (timed challenge)", detail: "15 minutes. Prize up to $6,000 and 150 fans.", action: StartJam, effects: []),
+         (label: "Skip it", detail: "", effects: []),
+     ]),
+
+    // ------------------------------------------------------------------ post-launch crises (hotfix challenges)
+    (id: "hotfix_crash", kind: Hotfix, title: "Crash reports are flooding in",
+     text: "{game} crashes on launch for a lot of players. Reviews are turning sour and refunds are rising.",
+     weight: 1.0, requires: [HasReleasedGame], cooldown_weeks: 15,
+     choices: [
+         (label: "Hotfix it yourself (code challenge)", detail: "Fix the bug for real: fewer bugs, happier players.", action: StartHotfix, effects: []),
+         (label: "Ship a quick workaround ($1,500)", detail: "A band-aid: bugs -3.", cost: 1500, effects: [TargetBugs(-3.0)]),
+         (label: "Ignore it", detail: "Sales of {game} drop 15%, -40 fans", effects: [TargetSalesMult(0.85), Fans(-40)]),
+     ]),
+    (id: "hotfix_saves", kind: Hotfix, title: "Players are losing their save files",
+     text: "A bug in {game} wipes save games when the disk is nearly full. The forums are on fire.",
+     weight: 0.8, requires: [HasReleasedGame], cooldown_weeks: 20,
+     choices: [
+         (label: "Hotfix it yourself (code challenge)", detail: "Handle the error properly this time.", action: StartHotfix, effects: []),
+         (label: "Offer refunds ($2,500)", detail: "Calms things down; bugs -2.", cost: 2500, effects: [TargetBugs(-2.0), Fans(10)]),
+         (label: "Ignore it", detail: "Sales of {game} drop 20%, -60 fans", effects: [TargetSalesMult(0.8), Fans(-60)]),
+     ]),
+    (id: "hotfix_exploit", kind: Hotfix, title: "Game-breaking exploit",
+     text: "Players found a way to get infinite points in {game}. The leaderboard has become a joke.",
+     weight: 0.7, requires: [HasReleasedGame], cooldown_weeks: 20,
+     choices: [
+         (label: "Hotfix it yourself (code challenge)", detail: "Track down the logic bug.", action: StartHotfix, effects: []),
+         (label: "Reset the leaderboard", detail: "Cheap, temporary. Fans -10.", effects: [Fans(-10)]),
+         (label: "Ignore it", detail: "-30 fans", effects: [Fans(-30), TargetSalesMult(0.9)]),
+     ]),
+]

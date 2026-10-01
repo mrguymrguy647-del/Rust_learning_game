@@ -10,7 +10,7 @@ use crate::data::ContentLibrary;
 const MORALE_BASELINE: f32 = 75.0;
 
 impl GameState {
-    /// Advance one week. Does nothing while a challenge is pending or after game over.
+    /// Advance one week. Does nothing while a challenge or event is pending, or after game over.
     pub fn advance_week(&mut self, content: &ContentLibrary) {
         self.tick(content, false);
     }
@@ -23,27 +23,34 @@ impl GameState {
         }
     }
 
+    /// True while the player must make a decision before time can continue.
+    pub fn is_blocked(&self) -> bool {
+        self.pending_attempt.is_some() || self.events.pending.is_some() || self.game_over.is_some()
+    }
+
     fn tick(&mut self, content: &ContentLibrary, quiet: bool) {
-        if self.game_over.is_some() || (!quiet && self.pending_attempt.is_some()) {
+        if self.game_over.is_some() || (!quiet && self.is_blocked()) {
             return;
         }
         self.date.advance(1);
         let week = self.date.week();
         let mut fin = WeekFinance { week, ..WeekFinance::default() };
 
+        self.advance_market(content);
         self.process_sales(content, &mut fin);
+        self.advance_licensing(content, &mut fin);
 
         let (rent, salaries) = self.weekly_fixed_costs(content);
         fin.rent = rent;
         fin.salaries = salaries;
-
-        let interest = self.weekly_interest(content);
-        fin.other += interest;
+        fin.other += self.weekly_interest(content);
 
         self.advance_project(content, &mut fin, quiet);
         self.update_morale(content);
         self.advance_engine(content);
         self.advance_staff(content);
+        self.advance_patch();
+        self.check_contract_deadline();
 
         self.studio.money += fin.net();
         if let Some(p) = self.project.as_mut() {
@@ -51,6 +58,10 @@ impl GameState {
         }
         self.finances.record(fin);
         self.check_bankruptcy(content);
+
+        if !quiet {
+            self.maybe_trigger_event(content);
+        }
     }
 
     fn process_sales(&mut self, content: &ContentLibrary, fin: &mut WeekFinance) {
@@ -60,14 +71,33 @@ impl GameState {
             if !self.games[i].on_sale {
                 continue;
             }
-            let (launch, decay, release, platform) = {
+            let (launch, decay, release, platform, genre, theme, trend_then) = {
                 let g = &self.games[i];
-                (g.launch_units, g.decay, g.release_week, g.platform.clone())
+                (
+                    g.launch_units,
+                    g.decay,
+                    g.release_week,
+                    g.platform.clone(),
+                    g.genre.clone(),
+                    g.theme.clone(),
+                    g.trend_at_release,
+                )
             };
             // The first tick after release is the launch week (age 0).
-            let units =
+            let base =
                 sales::weekly_units(content, launch, decay, release, &platform, week - 1, &mut self.rng);
+            // Fashion changes and rival hits move the audience.
+            let trend_ratio =
+                (self.market.demand_trend(&genre, &theme) / trend_then.max(0.1)).clamp(0.7, 1.4).sqrt();
+            let pressure = self.market.pressure(&genre, week);
             let g = &mut self.games[i];
+            let boost = if g.boost_weeks > 0 {
+                g.boost_weeks -= 1;
+                g.boost_mult.max(1.0)
+            } else {
+                1.0
+            };
+            let units = (base as f32 * trend_ratio * pressure * boost).round() as u32;
             let revenue = (units as f32 * g.price * (1.0 - g.store_cut) * rev_mult).round() as i64;
             g.sales.push(units);
             g.units_total += units as u64;
@@ -77,7 +107,7 @@ impl GameState {
             g.fans_acc -= whole;
             fin.revenue += revenue;
             self.studio.reputation += whole as i64;
-            let finished = units == 0 && g.age(week) >= 4;
+            let finished = units == 0 && g.age(week) >= 4 && g.boost_weeks == 0;
             if finished {
                 g.on_sale = false;
                 let text = format!(
@@ -99,8 +129,10 @@ impl GameState {
         if !complete_before {
             let team = self.team_week(content, crunch);
             let balance = &content.balance;
+            // Working on a patch pulls people off the project.
+            let focus = if self.patch.is_some() { 0.6 } else { 1.0 };
             if let Some(p) = self.project.as_mut() {
-                let work = team.output.min(p.work_total - p.work_done).max(0.0);
+                let work = (team.output * focus).min(p.work_total - p.work_done).max(0.0);
                 p.work_done += work;
                 p.output_acc += work;
                 p.bug_mult_acc += team.bug_mult * work;

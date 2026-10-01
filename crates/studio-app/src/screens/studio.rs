@@ -133,6 +133,54 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         widgets::dim(ui, "Loans bridge a gap, but interest is charged every week and a negative balance for too long means bankruptcy.");
     });
 
+    // ------------------------------------------------------------- licensing
+    ui.add_space(6.0);
+    let mut accept: Option<usize> = None;
+    let mut decline: Option<usize> = None;
+    widgets::card(ui, |ui| {
+        widgets::section(ui, "Engine licensing");
+        let slots = game.license_slots(&content);
+        ui.horizontal_wrapped(|ui| {
+            widgets::chip(ui, "Engine value", &game.engine_value(&content).to_string(), pal.accent);
+            widgets::chip(ui, "Licensees", &format!("{}/{}", game.licenses.len(), slots), pal.info);
+            widgets::chip(ui, "Income", &format!("{}/wk", fmt::money(game.license_income())), pal.good);
+        });
+        if slots == 0 {
+            widgets::dim(ui, "A garage studio is too small to license an engine. Move to a bigger office.");
+        } else if game.engine_value(&content) < 150 {
+            widgets::dim(
+                ui,
+                "Build more engine modules: studios only pay for an engine that is worth using.",
+            );
+        }
+        for l in &game.licenses {
+            ui.label(format!(
+                "{} — {}/week, {} weeks left",
+                l.licensee,
+                fmt::money(l.weekly_fee),
+                l.weeks_left
+            ));
+        }
+        for (i, o) in game.license_offers.iter().enumerate() {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(&o.licensee).strong());
+                ui.label(format!(
+                    "offers {}/week for {} weeks (signing bonus {})",
+                    fmt::money(o.weekly_fee),
+                    o.term_weeks,
+                    fmt::money(o.signing_fee)
+                ));
+                let free = game.licenses.len() < slots;
+                if ui.add_enabled(free, egui::Button::new("Accept")).clicked() {
+                    accept = Some(i);
+                }
+                if ui.button("Decline").clicked() {
+                    decline = Some(i);
+                }
+            });
+        }
+    });
+
     // ---------------------------------------------------------------- books
     ui.add_space(6.0);
     widgets::card(ui, |ui| {
@@ -159,6 +207,18 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         });
     });
 
+    if let Some(i) = accept {
+        if let Some(g) = app.game.as_mut() {
+            if let Err(e) = g.accept_license(&content, i) {
+                app.toast(ToastKind::Warn, e);
+            }
+        }
+    }
+    if let Some(i) = decline {
+        if let Some(g) = app.game.as_mut() {
+            g.decline_license(i);
+        }
+    }
     if upgrade {
         if let Some(g) = app.game.as_mut() {
             match g.upgrade_studio(&content) {
