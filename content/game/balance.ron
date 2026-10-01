@@ -2,10 +2,10 @@
 (
     start_money: 15000,
     sizes: [
-        (size: Small,  work: 220.0,  price: 9.99,  base_demand: 1500.0,  budget: 2000,   min_tier: 0, blockers: 2, expectation: 0.75),
-        (size: Medium, work: 800.0,  price: 19.99, base_demand: 4000.0,  budget: 15000,  min_tier: 1, blockers: 3, expectation: 0.88, requires_features: ["renderer_2d"]),
-        (size: Large,  work: 2600.0, price: 29.99, base_demand: 9000.0, budget: 90000,  min_tier: 2, blockers: 4, expectation: 1.02, requires_features: ["modular", "editor"]),
-        (size: AAA,    work: 8000.0, price: 49.99, base_demand: 40000.0, budget: 600000, min_tier: 3, blockers: 6, expectation: 1.6, requires_features: ["renderer_3d", "jobs"]),
+        (size: Small,  work: 220.0,  price: 9.99,  base_demand: 800.0,  budget: 2000,   min_tier: 0, blockers: 2, expectation: 0.75),
+        (size: Medium, work: 800.0,  price: 19.99, base_demand: 1500.0,  budget: 15000,  min_tier: 1, blockers: 3, expectation: 0.88, requires_features: ["renderer_2d"]),
+        (size: Large,  work: 2600.0, price: 29.99, base_demand: 1300.0, budget: 90000,  min_tier: 2, blockers: 4, expectation: 1.02, requires_features: ["modular", "editor"]),
+        (size: AAA,    work: 8000.0, price: 49.99, base_demand: 6000.0, budget: 600000, min_tier: 3, blockers: 6, expectation: 1.6, requires_features: ["renderer_3d", "jobs"]),
     ],
     bankruptcy_weeks: 8,
     crunch_speed: 1.35,

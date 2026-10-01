@@ -1,5 +1,6 @@
 //! The tycoon simulation. Pure logic: no UI, no I/O, deterministic given the RNG state.
 
+pub mod autoplay;
 pub mod challenge_flow;
 pub mod economy;
 pub mod engine;
