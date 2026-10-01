@@ -1,0 +1,20 @@
+[package]
+name = "studio-core"
+description = "Simulation, content, challenge runner and save system for Rust Studio Tycoon (UI-free, unit-testable)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+ron.workspace = true
+rand.workspace = true
+directories.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[lints]
+workspace = true

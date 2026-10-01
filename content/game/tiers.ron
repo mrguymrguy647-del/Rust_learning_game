@@ -1,0 +1,18 @@
+// Studio tiers. Index in this list = tier number used by the simulation.
+[
+    (id: "bedroom", name: "Bedroom", description: "A laptop, a desk, and a dream. Just you.",
+     rent: 60, staff_slots: 1, upgrade_cost: 0, required_reputation: 0,
+     max_difficulty: 2, loan_limit: 10000, license_slots: 0),
+    (id: "garage", name: "Garage", description: "Cold in winter, but there is room for a small team.",
+     rent: 250, staff_slots: 3, upgrade_cost: 8000, required_reputation: 300,
+     max_difficulty: 3, loan_limit: 40000, license_slots: 1),
+    (id: "small_office", name: "Small Office", description: "A real office with a coffee machine and an actual door.",
+     rent: 900, staff_slots: 7, upgrade_cost: 40000, required_reputation: 1500,
+     max_difficulty: 4, loan_limit: 150000, license_slots: 2),
+    (id: "studio", name: "Studio", description: "A whole floor, dedicated QA and an art department.",
+     rent: 3200, staff_slots: 14, upgrade_cost: 180000, required_reputation: 6000,
+     max_difficulty: 5, loan_limit: 600000, license_slots: 4),
+    (id: "aaa_hq", name: "AAA Headquarters", description: "A glass tower with your logo on top.",
+     rent: 11000, staff_slots: 28, upgrade_cost: 800000, required_reputation: 25000,
+     max_difficulty: 5, loan_limit: 2500000, license_slots: 8),
+]
