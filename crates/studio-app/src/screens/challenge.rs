@@ -426,7 +426,7 @@ fn left_pane(app: &mut App, view: &mut ChallengeView, ui: &mut egui::Ui) -> Opti
         ui.add_space(8.0);
         ui.label(RichText::new("STYLE REQUIREMENTS").small().color(pal.dim));
         for c in &view.challenge.checks {
-            ui.label(format!("• {}", c.message()));
+            widgets::markup(ui, &format!("• {}", c.message()));
         }
     }
 
@@ -828,7 +828,7 @@ fn tests_tab(report: &RunReport, ui: &mut egui::Ui) {
     for msg in &report.check_failures {
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new("✖").strong().color(pal.warn));
-            ui.label(msg);
+            widgets::markup(ui, msg);
         });
     }
     if report.tests.is_none() && report.check_failures.is_empty() {

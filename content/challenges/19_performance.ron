@@ -186,7 +186,7 @@ impl Scores {
         title: "The Job Queue That Shuffles Everything",
         story: "The job system keeps its work in a `Vec` and takes the next job from the FRONT with `remove(0)`. Every removal shifts all remaining jobs one slot to the left; with 150,000 queued jobs the scheduler spends all its time moving memory.",
         task: "Make `run_jobs` fast (well under 250 ms for 150,000 jobs) without changing its result. Jobs divisible by 5 enqueue a follow-up job at the BACK of the queue, so a plain loop over the input is not enough.",
-        signatures: ["pub fn run_jobs(jobs: Vec<u32>) -> u64"],
+        signatures: ["pub fn run_jobs(queue: Vec<u32>) -> u64"],
         starter_code: r##"/// Runs jobs in FIFO order and returns a checksum.
 /// Checksum = sum of `job * position` where position counts executed jobs from 1.
 /// A job divisible by 5 enqueues a follow-up job `job / 5 + 1` at the back.
