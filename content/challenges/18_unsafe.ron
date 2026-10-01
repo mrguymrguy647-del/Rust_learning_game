@@ -1,0 +1,276 @@
+// Topic 18: Unsafe & FFI — "Low-level optimization"
+[
+    (
+        id: "unsafe_01_raw_pointer_write",
+        topic: "unsafe",
+        kind: FixCompile,
+        difficulty: 3,
+        title: "Writing Through a Raw Pointer",
+        story: "A low-level routine zeroes a score slot through a raw pointer. Creating the pointer is fine; the compiler objects to something else.",
+        task: "Fix the compile error so `zero_out` sets the value to 0.",
+        signatures: ["pub fn zero_out(slot: &mut i32)"],
+        starter_code: r##"pub fn zero_out(slot: &mut i32) {
+    let ptr = slot as *mut i32;
+    *ptr = 0;
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn zeroes_the_value() {
+    let mut score = 42;
+    zero_out(&mut score);
+    assert_eq!(score, 0);
+}
+
+#[test]
+fn already_zero_stays_zero() {
+    let mut score = 0;
+    zero_out(&mut score);
+    assert_eq!(score, 0);
+}
+"##,
+        hints: [
+            "Creating a raw pointer (`as *mut i32`) is safe. DEREFERENCING it is not: the compiler cannot prove it points to valid memory.",
+            "Dereferencing a raw pointer must happen inside an `unsafe` block. Keep that block as small as possible.",
+            "unsafe {\n    *ptr = 0;\n}",
+        ],
+        solution: r##"pub fn zero_out(slot: &mut i32) {
+    let ptr = slot as *mut i32;
+    // SAFETY: `ptr` was just created from a valid, exclusive `&mut i32`.
+    unsafe {
+        *ptr = 0;
+    }
+}
+"##,
+        explanation: "`unsafe` does not turn the checks off — it marks the few operations (dereferencing raw pointers, calling unsafe functions, accessing mutable statics, …) where YOU promise to uphold the rules the compiler cannot verify. Keep unsafe blocks tiny and write a `// SAFETY:` comment explaining why the promise holds: here the pointer comes from a valid exclusive reference, so writing through it is sound. In real code you would just write `*slot = 0`.",
+        book_links: [
+            (title: "The Rust Book: Unsafe Rust — Dereferencing a Raw Pointer", url: "https://doc.rust-lang.org/book/ch20-01-unsafe-rust.html"),
+            (title: "Rust by Example: Unsafe Operations", url: "https://doc.rust-lang.org/rust-by-example/unsafe.html"),
+        ],
+        prerequisites: [],
+        engine_tags: ["lowlevel"],
+    ),
+    (
+        id: "unsafe_02_split_at_mut",
+        topic: "unsafe",
+        kind: FromScratch,
+        difficulty: 5,
+        title: "A Safe Wrapper Around Unsafe Code",
+        story: "The entity system needs to update two halves of the same array in parallel. Safe Rust cannot express \"two non-overlapping `&mut` slices of one slice\" — the standard library solves it with a little unsafe code behind a safe API. Now you write one.",
+        task: "Write `split_two(values, mid)` that returns the two disjoint halves `(&mut values[..mid], &mut values[mid..])`. Do not use `split_at_mut`: build the halves with `unsafe` and `std::slice::from_raw_parts_mut`. Panic (e.g. with `assert!`) if `mid > values.len()` — safe code must never be able to trigger undefined behaviour.",
+        signatures: ["pub fn split_two(values: &mut [i32], mid: usize) -> (&mut [i32], &mut [i32])"],
+        starter_code: "// Write `split_two` here: a safe function with an `unsafe` block inside.\n",
+        hidden_tests: r##"
+#[test]
+fn halves_are_independent() {
+    let mut data = [1, 2, 3, 4, 5];
+    let (left, right) = split_two(&mut data, 2);
+    assert_eq!(left, &[1, 2]);
+    assert_eq!(right, &[3, 4, 5]);
+    left[0] = 10;
+    right[0] = 30;
+    right[2] = 50;
+    assert_eq!(data, [10, 2, 30, 4, 50]);
+}
+
+#[test]
+fn edges_give_an_empty_half() {
+    let mut data = [7, 8, 9];
+    let (a, b) = split_two(&mut data, 0);
+    assert!(a.is_empty());
+    assert_eq!(b.len(), 3);
+    let (c, d) = split_two(&mut data, 3);
+    assert_eq!(c.len(), 3);
+    assert!(d.is_empty());
+}
+
+#[test]
+fn empty_slice_is_fine() {
+    let mut data: [i32; 0] = [];
+    let (a, b) = split_two(&mut data, 0);
+    assert!(a.is_empty() && b.is_empty());
+}
+
+#[test]
+#[should_panic]
+fn out_of_range_mid_panics_instead_of_corrupting_memory() {
+    let mut data = [1, 2, 3];
+    let _ = split_two(&mut data, 4);
+}
+"##,
+        checks: [
+            RequireWord(word: "unsafe", message: "Use an `unsafe` block with `std::slice::from_raw_parts_mut` to build the two slices."),
+            ForbidWord(word: "split_at_mut", message: "That is the safe API this exercise reimplements — build the halves yourself."),
+        ],
+        hints: [
+            "`slice.as_mut_ptr()` gives a raw `*mut i32` to the first element and `slice.len()` the length. `from_raw_parts_mut(ptr, len)` builds a `&mut [i32]` from them — but you must guarantee the memory is valid and not aliased.",
+            "The second half starts at `ptr.add(mid)` and has `len - mid` elements. First `assert!(mid <= len)`: without it the unsafe code would read past the end.",
+            "pub fn split_two(values: &mut [i32], mid: usize) -> (&mut [i32], &mut [i32]) {\n    let len = values.len();\n    let ptr = values.as_mut_ptr();\n    assert!(mid <= len);\n    // SAFETY: both ranges are inside the original slice and do not overlap.\n    unsafe {\n        (\n            std::slice::from_raw_parts_mut(ptr, mid),\n            std::slice::from_raw_parts_mut(ptr.add(mid), len - mid),\n        )\n    }\n}",
+        ],
+        solution: r##"pub fn split_two(values: &mut [i32], mid: usize) -> (&mut [i32], &mut [i32]) {
+    let len = values.len();
+    let ptr = values.as_mut_ptr();
+    assert!(mid <= len, "mid is out of range");
+    // SAFETY: `mid <= len`, so both ranges lie inside the original slice, and they
+    // do not overlap, so no two `&mut` references alias the same elements.
+    unsafe {
+        (
+            std::slice::from_raw_parts_mut(ptr, mid),
+            std::slice::from_raw_parts_mut(ptr.add(mid), len - mid),
+        )
+    }
+}
+"##,
+        explanation: "This is the canonical example of a SAFE ABSTRACTION over unsafe code. The borrow checker cannot see that `[..mid]` and `[mid..]` never overlap, so the implementation uses raw pointers; the function's own check (`mid <= len`) establishes the conditions that make the `unsafe` block sound, and the `// SAFETY:` comment documents them. Callers get a completely safe API: no input they can pass causes undefined behaviour, only a panic. That is the contract every `unsafe` block should uphold.",
+        book_links: [
+            (title: "The Rust Book: Creating a Safe Abstraction over Unsafe Code", url: "https://doc.rust-lang.org/book/ch20-01-unsafe-rust.html#creating-a-safe-abstraction-over-unsafe-code"),
+            (title: "std docs: slice::from_raw_parts_mut", url: "https://doc.rust-lang.org/std/slice/fn.from_raw_parts_mut.html"),
+        ],
+        prerequisites: ["unsafe_01_raw_pointer_write"],
+        engine_tags: ["lowlevel", "ecs"],
+    ),
+    (
+        id: "unsafe_03_ffi_strlen",
+        topic: "unsafe",
+        kind: Complete,
+        difficulty: 4,
+        title: "Calling C From Rust",
+        story: "A legacy C library measures strings with the C runtime's `strlen`. To talk to it you need an `extern \"C\"` declaration, a NUL-terminated `CString`, and one carefully justified `unsafe` call.",
+        task: "Implement `c_len`: convert `text` to a `CString` (return `None` if it contains an interior NUL byte), call the foreign `strlen` and return `Some(length)`.",
+        signatures: ["pub fn c_len(text: &str) -> Option<usize>"],
+        starter_code: r##"use std::ffi::{c_char, CString};
+
+extern "C" {
+    fn strlen(s: *const c_char) -> usize;
+}
+
+/// Length of `text` as measured by C's `strlen`, or `None` if it contains a NUL byte.
+pub fn c_len(text: &str) -> Option<usize> {
+    todo!()
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn measures_ascii() {
+    assert_eq!(c_len("hello"), Some(5));
+    assert_eq!(c_len(""), Some(0));
+}
+
+#[test]
+fn counts_bytes_not_characters() {
+    assert_eq!(c_len("héllo"), Some(6));
+}
+
+#[test]
+fn interior_nul_is_rejected() {
+    assert_eq!(c_len("a\0b"), None);
+}
+"##,
+        hints: [
+            "C strings end with a NUL byte, Rust strings do not. `CString::new(text)` appends the terminator and fails (returns `Err`) if `text` already contains a NUL.",
+            "`c_string.as_ptr()` gives the `*const c_char` that `strlen` wants. Calling a foreign function is unsafe, because the compiler cannot check what C does with the pointer.",
+            "let c_string = CString::new(text).ok()?;\n// SAFETY: `c_string` is a valid NUL-terminated string that outlives the call.\nlet len = unsafe { strlen(c_string.as_ptr()) };\nSome(len)",
+        ],
+        solution: r##"use std::ffi::{c_char, CString};
+
+extern "C" {
+    fn strlen(s: *const c_char) -> usize;
+}
+
+/// Length of `text` as measured by C's `strlen`, or `None` if it contains a NUL byte.
+pub fn c_len(text: &str) -> Option<usize> {
+    let c_string = CString::new(text).ok()?;
+    // SAFETY: `c_string` is a valid NUL-terminated string that lives until after the call.
+    let len = unsafe { strlen(c_string.as_ptr()) };
+    Some(len)
+}
+"##,
+        explanation: "FFI (foreign function interface) lets Rust call C. An `extern \"C\"` block declares the foreign signature; every call is `unsafe` because the compiler cannot check the C side. The standard types `CString` (owned, NUL-terminated) and `CStr` (borrowed) bridge between Rust strings and C strings — and `CString::new` returns an error for interior NULs, which a naive `*const u8` cast would silently turn into a truncated string. The SAFETY comment states the contract: valid pointer, terminated, alive for the call.",
+        book_links: [
+            (title: "The Rust Book: Using extern Functions to Call External Code", url: "https://doc.rust-lang.org/book/ch20-01-unsafe-rust.html#using-extern-functions-to-call-external-code"),
+            (title: "std docs: CString", url: "https://doc.rust-lang.org/std/ffi/struct.CString.html"),
+        ],
+        prerequisites: ["unsafe_02_split_at_mut"],
+        engine_tags: ["lowlevel", "ffi"],
+    ),
+    (
+        id: "unsafe_04_review_unsound",
+        topic: "unsafe",
+        kind: CodeReview,
+        difficulty: 4,
+        title: "Review: Which Unsafe Is Unsound?",
+        story: "A reviewer's golden rule: every `unsafe` block needs an argument for why it is sound. Four functions arrive, each with an `unsafe` block. Three come with a valid argument; one does not.",
+        task: "Which function contains UNSOUND unsafe code (it can cause undefined behaviour for some inputs from safe code)?",
+        explanation: "`first` calls `get_unchecked(0)` on a slice that might be EMPTY — a safe caller can pass `&[]` and trigger undefined behaviour (an out-of-bounds read), so the function is unsound. The other three justify their `unsafe` blocks: `get` checks the index first; the bytes in `greeting` are known-valid ASCII; and `bump` writes through a pointer it just made from a valid exclusive reference. Rule of thumb: if a safe function's callers can break the preconditions, either check them inside the function or make the function itself `unsafe`.",
+        solution: "Option B: `first` assumes the slice is non-empty, but safe callers can pass an empty slice, causing undefined behaviour.",
+        book_links: [
+            (title: "The Rustonomicon: What Unsafe Can Do", url: "https://doc.rust-lang.org/nomicon/what-unsafe-does.html"),
+            (title: "The Rust Book: Unsafe Superpowers", url: "https://doc.rust-lang.org/book/ch20-01-unsafe-rust.html"),
+        ],
+        prerequisites: ["unsafe_03_ffi_strlen"],
+        engine_tags: ["lowlevel"],
+        quiz: Some((
+            question: "Which function contains UNSOUND unsafe code?",
+            code: "",
+            options_are_code: true,
+            options: [
+                "pub fn get(v: &[u8], i: usize) -> Option<u8> {\n    if i < v.len() {\n        // SAFETY: `i` was just checked against the length.\n        Some(unsafe { *v.get_unchecked(i) })\n    } else {\n        None\n    }\n}",
+                "pub fn first(v: &[u8]) -> u8 {\n    unsafe { *v.get_unchecked(0) }\n}",
+                "pub fn greeting() -> String {\n    let bytes = vec![104, 101, 108, 108, 111];\n    // SAFETY: these bytes are the ASCII text \"hello\".\n    unsafe { String::from_utf8_unchecked(bytes) }\n}",
+                "pub fn bump(counter: &mut u32) {\n    let ptr: *mut u32 = counter;\n    // SAFETY: `ptr` was just created from a valid, exclusive reference.\n    unsafe {\n        *ptr += 1;\n    }\n}",
+            ],
+            correct: 1,
+        )),
+    ),
+    (
+        id: "unsafe_05_predict_layout",
+        topic: "unsafe",
+        kind: PredictOutput,
+        difficulty: 4,
+        title: "How Big Is a Struct?",
+        story: "FFI structs must match C's memory layout exactly. A teammate added `#[repr(C)]` to one of two identical structs and the binary size of an array of them changed. Predict the sizes.",
+        task: "What does this program print (on a typical 64-bit platform)?",
+        explanation: "By default Rust is free to REORDER fields; in practice it sorts them to remove padding, so `A` stores `u32, u8, u8` = 6 bytes, padded to a multiple of 4: 8. `#[repr(C)]` forces C's layout — fields in declaration order with padding for alignment: `u8` + 3 padding + `u32` + `u8` + 3 padding = 12. A `u8` is 1 byte. `Option<Box<i32>>` is just 8 bytes: a Box is never null, so `None` can use the null pointer (the \"niche\" optimisation) and no extra tag is needed.",
+        solution: "8\n12\n1\n8",
+        book_links: [
+            (title: "The Rustonomicon: Data Layout and repr(C)", url: "https://doc.rust-lang.org/nomicon/other-reprs.html"),
+            (title: "std docs: mem::size_of", url: "https://doc.rust-lang.org/std/mem/fn.size_of.html"),
+        ],
+        prerequisites: ["unsafe_04_review_unsound"],
+        engine_tags: ["lowlevel", "ffi"],
+        quiz: Some((
+            question: "What does this program print (on a typical 64-bit platform)?",
+            code: r##"use std::mem::size_of;
+
+#[allow(dead_code)]
+struct A {
+    a: u8,
+    b: u32,
+    c: u8,
+}
+
+#[allow(dead_code)]
+#[repr(C)]
+struct B {
+    a: u8,
+    b: u32,
+    c: u8,
+}
+
+fn main() {
+    println!("{}", size_of::<A>());
+    println!("{}", size_of::<B>());
+    println!("{}", size_of::<u8>());
+    println!("{}", size_of::<Option<Box<i32>>>());
+}"##,
+            options: [
+                "8\n12\n1\n8",
+                "12\n12\n1\n8",
+                "8\n8\n1\n16",
+                "6\n12\n1\n8",
+            ],
+            correct: 0,
+            verify: RunOutput,
+        )),
+    ),
+]

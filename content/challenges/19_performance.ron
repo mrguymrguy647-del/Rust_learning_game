@@ -1,0 +1,382 @@
+// Topic 19: Performance — "AAA optimization pass"
+// Timing thresholds are generous: the slow starters are 5-1000x slower than the fixes.
+[
+    (
+        id: "performance_01_string_building",
+        topic: "performance",
+        kind: Performance,
+        difficulty: 3,
+        title: "The Ever-Growing Log",
+        story: "The crash reporter builds its log text by gluing each new line onto the previous text. With 20,000 lines the QA machine spends seconds just concatenating strings — profiling shows almost all of it is memory copying.",
+        task: "Make `build_log` fast: it must join the lines (each followed by `\\n`) in well under 200 ms for 20,000 lines. The output must not change.",
+        signatures: ["pub fn build_log(lines: &[String]) -> String"],
+        starter_code: r##"/// Joins all lines into one text; every line is followed by '\n'.
+pub fn build_log(lines: &[String]) -> String {
+    let mut out = String::new();
+    for line in lines {
+        out = format!("{}{}\n", out, line);
+    }
+    out
+}
+"##,
+        hidden_tests: r##"
+use std::time::Instant;
+
+#[test]
+fn joins_lines_with_newlines() {
+    let lines = vec![String::from("a"), String::from("bc")];
+    assert_eq!(build_log(&lines), "a\nbc\n");
+    assert_eq!(build_log(&[]), "");
+}
+
+#[test]
+fn twenty_thousand_lines_are_quick() {
+    let lines: Vec<String> = (0..20_000).map(|i| format!("{:>39}", i)).collect();
+    let start = Instant::now();
+    let text = build_log(&lines);
+    let elapsed = start.elapsed();
+
+    assert_eq!(text.len(), 20_000 * 40);
+    assert!(text.starts_with("                                      0\n"));
+    assert!(text.ends_with("19999\n"));
+    assert!(elapsed.as_millis() < 200, "took {} ms, expected well under 200 ms", elapsed.as_millis());
+}
+"##,
+        hints: [
+            "`format!(\"{}{}\\n\", out, line)` allocates a brand new `String` and copies ALL of `out` into it on every iteration — so the total work grows with the SQUARE of the line count.",
+            "Append to the same `String` in place with `push_str` / `push`, so each byte is copied once. `String::with_capacity` avoids even the occasional re-allocation.",
+            "let mut out = String::with_capacity(lines.iter().map(|l| l.len() + 1).sum());\nfor line in lines {\n    out.push_str(line);\n    out.push('\\n');\n}\nout",
+        ],
+        solution: r##"/// Joins all lines into one text; every line is followed by '\n'.
+pub fn build_log(lines: &[String]) -> String {
+    let mut out = String::with_capacity(lines.iter().map(|l| l.len() + 1).sum());
+    for line in lines {
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+"##,
+        explanation: "Performance bugs are usually about algorithms and allocations, not clever tricks. Rebuilding a `String` with `format!` on every pass copies everything built so far, turning an O(n) job into O(n²). `push_str` appends in place (amortised O(1) per byte), and `with_capacity` reserves the final size up front so the buffer is allocated exactly once. The same idea applies to `Vec`: reserve when you know the size and never rebuild a growing collection in a loop.",
+        book_links: [
+            (title: "The Rust Performance Book: Heap Allocations", url: "https://nnethercote.github.io/perf-book/heap-allocations.html"),
+            (title: "std docs: String::with_capacity", url: "https://doc.rust-lang.org/std/string/struct.String.html#method.with_capacity"),
+        ],
+        prerequisites: [],
+        engine_tags: ["performance", "logging"],
+        test_timeout_secs: Some(40),
+    ),
+    (
+        id: "performance_02_prefix_sums",
+        topic: "performance",
+        kind: Performance,
+        difficulty: 4,
+        title: "A Hundred Thousand Range Queries",
+        story: "The analytics dashboard asks questions like \"total score between match 1,200 and match 87,400\" — a hundred thousand times per refresh. Re-adding the numbers for every question makes the dashboard crawl.",
+        task: "Make `Scores::range_sum(from, to)` (inclusive on both ends) fast: 100,000 queries over 100,000 values must finish in well under 200 ms. You may do work once in `Scores::new`.",
+        signatures: ["pub struct Scores", "impl Scores { pub fn new(values: Vec<i64>) -> Scores; pub fn range_sum(&self, from: usize, to: usize) -> i64 }"],
+        starter_code: r##"pub struct Scores {
+    values: Vec<i64>,
+}
+
+impl Scores {
+    pub fn new(values: Vec<i64>) -> Scores {
+        Scores { values }
+    }
+
+    /// Sum of `values[from..=to]` (both ends included); `from <= to < len`.
+    pub fn range_sum(&self, from: usize, to: usize) -> i64 {
+        self.values[from..=to].iter().sum()
+    }
+}
+"##,
+        hidden_tests: r##"
+use std::time::Instant;
+
+#[test]
+fn small_ranges() {
+    let s = Scores::new(vec![5, 1, 4, 2, 3]);
+    assert_eq!(s.range_sum(0, 4), 15);
+    assert_eq!(s.range_sum(1, 3), 7);
+    assert_eq!(s.range_sum(2, 2), 4);
+    assert_eq!(s.range_sum(0, 0), 5);
+}
+
+#[test]
+fn negative_values_work() {
+    let s = Scores::new(vec![-3, 8, -10, 4]);
+    assert_eq!(s.range_sum(0, 2), -5);
+    assert_eq!(s.range_sum(2, 3), -6);
+}
+
+#[test]
+fn a_hundred_thousand_queries_are_quick() {
+    let n = 100_000usize;
+    let values: Vec<i64> = (0..n as i64).map(|i| i % 1000).collect();
+    let mut x: u64 = 7;
+    let mut next = move || {
+        x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (x >> 33) as usize % n
+    };
+    let queries: Vec<(usize, usize)> = (0..100_000)
+        .map(|_| {
+            let (a, b) = (next(), next());
+            (a.min(b), a.max(b))
+        })
+        .collect();
+
+    // Reference answers computed with a prefix table.
+    let mut prefix = vec![0i64; n + 1];
+    for i in 0..n {
+        prefix[i + 1] = prefix[i] + values[i];
+    }
+
+    let start = Instant::now();
+    let scores = Scores::new(values);
+    let answers: Vec<i64> = queries.iter().map(|&(a, b)| scores.range_sum(a, b)).collect();
+    let elapsed = start.elapsed();
+
+    for (i, &(a, b)) in queries.iter().enumerate() {
+        assert_eq!(answers[i], prefix[b + 1] - prefix[a], "query {} ({}..={})", i, a, b);
+    }
+    assert!(elapsed.as_millis() < 200, "took {} ms, expected well under 200 ms", elapsed.as_millis());
+}
+"##,
+        hints: [
+            "Each query re-adds up to 100,000 numbers: queries × length operations in total. Can you precompute something ONCE so every query becomes a couple of lookups?",
+            "A prefix-sum table: `prefix[i]` = sum of the first `i` values (so `prefix[0] = 0`). Then the sum of `values[from..=to]` is `prefix[to + 1] - prefix[from]`.",
+            "pub fn new(values: Vec<i64>) -> Scores {\n    let mut prefix = Vec::with_capacity(values.len() + 1);\n    prefix.push(0);\n    let mut total = 0;\n    for v in values {\n        total += v;\n        prefix.push(total);\n    }\n    Scores { prefix }\n}\n// range_sum: self.prefix[to + 1] - self.prefix[from]",
+        ],
+        solution: r##"pub struct Scores {
+    prefix: Vec<i64>,
+}
+
+impl Scores {
+    pub fn new(values: Vec<i64>) -> Scores {
+        let mut prefix = Vec::with_capacity(values.len() + 1);
+        prefix.push(0);
+        let mut total = 0;
+        for v in values {
+            total += v;
+            prefix.push(total);
+        }
+        Scores { prefix }
+    }
+
+    /// Sum of `values[from..=to]` (both ends included); `from <= to < len`.
+    pub fn range_sum(&self, from: usize, to: usize) -> i64 {
+        self.prefix[to + 1] - self.prefix[from]
+    }
+}
+"##,
+        explanation: "When the same data is queried many times, trade a little memory and one pass of preprocessing for much cheaper queries. A prefix-sum table turns every range sum from O(length) into O(1): the sum over a range is the difference of two running totals. This \"precompute once, answer many\" idea (caches, indexes, lookup tables) is the heart of most algorithmic speed-ups — and Rust's iterators make the one-time pass cheap and clear.",
+        book_links: [
+            (title: "The Rust Performance Book: General Tips", url: "https://nnethercote.github.io/perf-book/general-tips.html"),
+            (title: "The Rust Book: Using Structs to Structure Related Data", url: "https://doc.rust-lang.org/book/ch05-00-structs.html"),
+        ],
+        prerequisites: ["performance_01_string_building"],
+        engine_tags: ["performance", "analytics"],
+        test_timeout_secs: Some(40),
+    ),
+    (
+        id: "performance_03_job_queue",
+        topic: "performance",
+        kind: Performance,
+        difficulty: 4,
+        title: "The Job Queue That Shuffles Everything",
+        story: "The job system keeps its work in a `Vec` and takes the next job from the FRONT with `remove(0)`. Every removal shifts all remaining jobs one slot to the left; with 150,000 queued jobs the scheduler spends all its time moving memory.",
+        task: "Make `run_jobs` fast (well under 250 ms for 150,000 jobs) without changing its result. Jobs divisible by 5 enqueue a follow-up job at the BACK of the queue, so a plain loop over the input is not enough.",
+        signatures: ["pub fn run_jobs(jobs: Vec<u32>) -> u64"],
+        starter_code: r##"/// Runs jobs in FIFO order and returns a checksum.
+/// Checksum = sum of `job * position` where position counts executed jobs from 1.
+/// A job divisible by 5 enqueues a follow-up job `job / 5 + 1` at the back.
+pub fn run_jobs(mut queue: Vec<u32>) -> u64 {
+    let mut position = 1u64;
+    let mut checksum = 0u64;
+    while !queue.is_empty() {
+        let job = queue.remove(0);
+        checksum = checksum.wrapping_add(job as u64 * position);
+        position += 1;
+        if job % 5 == 0 {
+            queue.push(job / 5 + 1);
+        }
+    }
+    checksum
+}
+"##,
+        hidden_tests: r##"
+use std::collections::VecDeque;
+use std::time::Instant;
+
+fn reference(jobs: &[u32]) -> u64 {
+    let mut queue: VecDeque<u32> = jobs.iter().copied().collect();
+    let mut position = 1u64;
+    let mut checksum = 0u64;
+    while let Some(job) = queue.pop_front() {
+        checksum = checksum.wrapping_add(job as u64 * position);
+        position += 1;
+        if job % 5 == 0 {
+            queue.push_back(job / 5 + 1);
+        }
+    }
+    checksum
+}
+
+#[test]
+fn small_queues() {
+    assert_eq!(run_jobs(vec![]), 0);
+    assert_eq!(run_jobs(vec![3]), 3);
+    // 10 runs first (10*1), enqueues 3; then 7 (7*2) and 3 (3*3).
+    assert_eq!(run_jobs(vec![10, 7]), 10 + 14 + 9);
+}
+
+#[test]
+fn matches_the_reference_on_mixed_input() {
+    let jobs: Vec<u32> = (1..=500).collect();
+    assert_eq!(run_jobs(jobs.clone()), reference(&jobs));
+}
+
+#[test]
+fn a_hundred_fifty_thousand_jobs_are_quick() {
+    let jobs: Vec<u32> = (0..150_000u32).map(|i| i % 97 + 1).collect();
+    let expected = reference(&jobs);
+    let start = Instant::now();
+    let result = run_jobs(jobs);
+    let elapsed = start.elapsed();
+    assert_eq!(result, expected);
+    assert!(elapsed.as_millis() < 250, "took {} ms, expected well under 250 ms", elapsed.as_millis());
+}
+"##,
+        hints: [
+            "`Vec::remove(0)` is O(n): it moves every remaining element. A `Vec` is great at the BACK, terrible at the FRONT.",
+            "`std::collections::VecDeque` is a ring buffer: `push_back` and `pop_front` are both O(1). Convert the input with `VecDeque::from(queue)`.",
+            "use std::collections::VecDeque;\n\npub fn run_jobs(queue: Vec<u32>) -> u64 {\n    let mut queue = VecDeque::from(queue);\n    // …\n    while let Some(job) = queue.pop_front() {\n        // … same body, with queue.push_back(...)\n    }\n    checksum\n}",
+        ],
+        solution: r##"use std::collections::VecDeque;
+
+/// Runs jobs in FIFO order and returns a checksum.
+/// Checksum = sum of `job * position` where position counts executed jobs from 1.
+/// A job divisible by 5 enqueues a follow-up job `job / 5 + 1` at the back.
+pub fn run_jobs(queue: Vec<u32>) -> u64 {
+    let mut queue = VecDeque::from(queue);
+    let mut position = 1u64;
+    let mut checksum = 0u64;
+    while let Some(job) = queue.pop_front() {
+        checksum = checksum.wrapping_add(job as u64 * position);
+        position += 1;
+        if job % 5 == 0 {
+            queue.push_back(job / 5 + 1);
+        }
+    }
+    checksum
+}
+"##,
+        explanation: "Picking the right data structure is the biggest performance lever. A `Vec` is a contiguous array: pushing and popping at the END is O(1), but inserting or removing at the FRONT shifts everything (O(n)), so a loop of `remove(0)` is quadratic. `VecDeque` is a double-ended queue backed by a ring buffer, giving O(1) at both ends — exactly what a FIFO queue needs. Whenever you reach for `remove(0)` or `insert(0, …)` in a loop, ask whether you wanted a `VecDeque`.",
+        book_links: [
+            (title: "std docs: VecDeque", url: "https://doc.rust-lang.org/std/collections/struct.VecDeque.html"),
+            (title: "std docs: choosing a collection", url: "https://doc.rust-lang.org/std/collections/index.html#when-should-you-use-which-collection"),
+        ],
+        prerequisites: ["performance_02_prefix_sums"],
+        engine_tags: ["performance", "jobs"],
+        test_timeout_secs: Some(40),
+    ),
+    (
+        id: "performance_04_single_pass",
+        topic: "performance",
+        kind: Refactor,
+        difficulty: 4,
+        title: "One Pass Is Enough",
+        story: "The damage meter computes the average of all hits of 10 or more. It collects a temporary `Vec`, then walks it again for the sum and again for the length. On a 500,000-hit replay that means a big needless allocation per frame.",
+        task: "Refactor `average_strong_hit` into a single pass over the input with no temporary collection: no `Vec`, no `.collect`. Use `.fold(…)` to accumulate the total and the count together. Behaviour must stay the same.",
+        signatures: ["pub fn average_strong_hit(hits: &[u32]) -> f64"],
+        starter_code: r##"/// Average of all hits >= 10 (0.0 if there are none).
+pub fn average_strong_hit(hits: &[u32]) -> f64 {
+    let strong: Vec<u32> = hits.iter().copied().filter(|hit| *hit >= 10).collect();
+    let total: u32 = strong.iter().sum();
+    if strong.is_empty() {
+        0.0
+    } else {
+        total as f64 / strong.len() as f64
+    }
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn averages_only_strong_hits() {
+    assert_eq!(average_strong_hit(&[5, 10, 30, 2, 20]), 20.0);
+}
+
+#[test]
+fn no_strong_hits_gives_zero() {
+    assert_eq!(average_strong_hit(&[1, 2, 3]), 0.0);
+    assert_eq!(average_strong_hit(&[]), 0.0);
+}
+
+#[test]
+fn handles_large_inputs() {
+    let hits: Vec<u32> = (0..500_000).map(|i| i % 20).collect();
+    // Values 10..=19 appear equally often: average 14.5.
+    assert_eq!(average_strong_hit(&hits), 14.5);
+}
+"##,
+        checks: [
+            ForbidWord(word: "Vec", message: "Do not build a temporary `Vec`: accumulate while iterating."),
+            ForbidText(text: ".collect", message: "Do not collect into a temporary collection."),
+            RequireText(text: ".fold(", message: "Use `.fold(initial, |acc, item| …)` to keep a running (total, count)."),
+        ],
+        hints: [
+            "`fold` threads an accumulator through an iterator. The accumulator can be a tuple: `(total, count)`.",
+            "Filter the strong hits, then `.fold((0u64, 0u64), |(total, count), hit| (total + hit as u64, count + 1))`. Afterwards divide, taking care of `count == 0`.",
+            "let (total, count) = hits\n    .iter()\n    .filter(|hit| **hit >= 10)\n    .fold((0u64, 0u64), |(total, count), hit| (total + *hit as u64, count + 1));\nif count == 0 { 0.0 } else { total as f64 / count as f64 }",
+        ],
+        solution: r##"/// Average of all hits >= 10 (0.0 if there are none).
+pub fn average_strong_hit(hits: &[u32]) -> f64 {
+    let (total, count) = hits
+        .iter()
+        .filter(|hit| **hit >= 10)
+        .fold((0u64, 0u64), |(total, count), hit| (total + *hit as u64, count + 1));
+    if count == 0 {
+        0.0
+    } else {
+        total as f64 / count as f64
+    }
+}
+"##,
+        explanation: "Every `collect()` into a temporary `Vec` allocates memory and adds extra passes over the data. Iterator adapters are lazy and fuse into ONE loop, so if you keep the pipeline going until the final consumer (`fold`, `sum`, `count`, `max`, …) nothing is ever stored. Folding with a tuple accumulator computes several statistics in a single pass. Collect only when you actually need the elements afterwards.",
+        book_links: [
+            (title: "The Rust Performance Book: Iterators", url: "https://nnethercote.github.io/perf-book/iterators.html"),
+            (title: "std docs: Iterator::fold", url: "https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.fold"),
+        ],
+        prerequisites: ["performance_03_job_queue"],
+        engine_tags: ["performance", "analytics"],
+    ),
+    (
+        id: "performance_05_review_quadratic",
+        topic: "performance",
+        kind: CodeReview,
+        difficulty: 4,
+        title: "Review: Find the Quadratic Function",
+        story: "A performance review: four functions reverse a string, and the profiler flags one of them as quadratic — doubling the input quadruples the time. The others scale linearly.",
+        task: "Which function is quadratic (O(n²)) in the length of the text?",
+        explanation: "`insert(0, c)` on a `String` shifts every existing byte to make room, which costs O(len) — doing it once per character is O(n²). The other versions do constant work per character: `chars().rev().collect()` and the `Vec<char>` + `reverse()` approach are straightforward linear passes, and so is the byte-wise reversal. When a loop body contains an operation whose cost depends on the size of the thing being built (insert at front, `remove(0)`, `contains` on a Vec, repeated concatenation), suspect a hidden O(n²).",
+        solution: "Option B: `out.insert(0, c)` shifts the whole string for every character.",
+        book_links: [
+            (title: "The Rust Performance Book: Profiling", url: "https://nnethercote.github.io/perf-book/profiling.html"),
+            (title: "std docs: String::insert", url: "https://doc.rust-lang.org/std/string/struct.String.html#method.insert"),
+        ],
+        prerequisites: ["performance_04_single_pass"],
+        engine_tags: ["performance"],
+        quiz: Some((
+            question: "Which function is quadratic (O(n²)) in the length of the text?",
+            code: "",
+            options_are_code: true,
+            options: [
+                "fn reverse(s: &str) -> String {\n    s.chars().rev().collect()\n}",
+                "fn reverse(s: &str) -> String {\n    let mut out = String::new();\n    for c in s.chars() {\n        out.insert(0, c);\n    }\n    out\n}",
+                "fn reverse(s: &str) -> String {\n    let mut chars: Vec<char> = s.chars().collect();\n    chars.reverse();\n    chars.into_iter().collect()\n}",
+                "fn reverse(s: &str) -> String {\n    let mut out = String::with_capacity(s.len());\n    for c in s.chars().rev() {\n        out.push(c);\n    }\n    out\n}",
+            ],
+            correct: 1,
+        )),
+    ),
+]
