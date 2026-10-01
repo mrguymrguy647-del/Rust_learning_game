@@ -4,6 +4,7 @@ mod app;
 mod editor;
 mod screens;
 mod theme;
+mod tutorial;
 mod widgets;
 
 use std::sync::Arc;

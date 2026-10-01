@@ -80,6 +80,15 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             ui.checkbox(&mut app.settings.autosave, "Autosave every few weeks and when leaving").changed();
     });
 
+    ui.add_space(8.0);
+    widgets::card(ui, |ui| {
+        widgets::section(ui, "Tutorial");
+        widgets::dim(ui, "A short tour of the tycoon screens, and a tour of the code editor in your next coding challenge.");
+        if ui.button("Replay the tutorial").clicked() {
+            crate::tutorial::replay(app);
+        }
+    });
+
     if changed {
         app.settings = app.settings.clone().sanitized();
         app.mark_settings_dirty();

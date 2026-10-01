@@ -30,7 +30,7 @@ pub enum View {
     Game,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Nav {
     Dashboard,
     Projects,
@@ -144,6 +144,9 @@ pub struct App {
     /// Codex entry shown in the reading pane, and the search box text.
     pub codex_selected: Option<String>,
     pub codex_search: String,
+    /// Current page of the tycoon tour / editor tour (`None` = not running).
+    pub tutorial: Option<usize>,
+    pub editor_tour: Option<usize>,
     /// The "new project" form (created lazily).
     pub project_form: Option<crate::screens::projects::ProjectForm>,
     /// Index into `game.games` of the release whose reviews are shown.
@@ -190,6 +193,8 @@ impl App {
             practice_filter: None,
             codex_selected: None,
             codex_search: String::new(),
+            tutorial: None,
+            editor_tour: None,
             project_form: None,
             review_popup: None,
             confirm_cancel_project: false,
@@ -267,8 +272,12 @@ impl App {
                 attempt.code = draft.clone();
             }
         }
+        let first_code_challenge = !self.settings.editor_tutorial_done && !challenge.is_quiz();
         self.challenge = Some(ChallengeView::new(challenge, attempt, self.nav));
         self.speed = Speed::Paused;
+        if first_code_challenge && self.editor_tour.is_none() {
+            crate::tutorial::start_editor_tour(self);
+        }
     }
 
     /// Remember what the player typed so leaving and coming back does not lose it.
@@ -385,6 +394,10 @@ impl App {
                 }
             }
             _ => {}
+        }
+        if !spec.contains("tour") {
+            self.tutorial = None;
+            self.editor_tour = None;
         }
     }
 
@@ -503,6 +516,10 @@ impl App {
         self.time_acc = 0.0;
         self.weeks_since_autosave = 0;
         self.autosave();
+        self.tutorial = None;
+        if !self.settings.tutorial_done {
+            crate::tutorial::start_tycoon_tour(self);
+        }
         self.toast(ToastKind::Info, "Studio founded. Good luck!");
     }
 
@@ -510,6 +527,7 @@ impl App {
         match save::load_game(&self.paths, slot) {
             Ok(file) => {
                 self.game = Some(file.state);
+                self.tutorial = None;
                 self.current_slot = Some(slot.to_string());
                 self.view = View::Game;
                 self.nav = Nav::Dashboard;
@@ -689,6 +707,7 @@ impl App {
         crate::screens::events::show(self, ui.ctx());
         crate::screens::reviews::show_popup(self, ui.ctx());
         crate::screens::gameover::show(self, ui.ctx());
+        crate::tutorial::show_tycoon(self, ui.ctx());
     }
 
     fn top_bar(&mut self, ui: &mut egui::Ui) {
@@ -887,7 +906,9 @@ pub fn test_app(name: &str) -> App {
     let dir = std::env::temp_dir().join(format!("rst_app_{name}_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let paths = AppPaths::at(dir);
-    App::new(paths, Settings::default(), Arc::new(ContentLibrary::embedded()))
+    // Existing tests exercise the game itself; tutorial tests switch the tours on explicitly.
+    let settings = Settings { tutorial_done: true, editor_tutorial_done: true, ..Settings::default() };
+    App::new(paths, settings, Arc::new(ContentLibrary::embedded()))
 }
 
 #[cfg(test)]
@@ -970,6 +991,73 @@ mod tests {
         let before = game.progress.codex_new_count(&content.codex);
         game.progress.mark_codex_seen(&entry.id);
         assert_eq!(game.progress.codex_new_count(&content.codex), before - 1);
+        let _ = std::fs::remove_dir_all(app.paths.root());
+    }
+
+    #[test]
+    fn the_tycoon_tour_runs_to_the_end_and_is_remembered() {
+        use crate::tutorial::{self, TYCOON_STEPS};
+        let mut app = test_app("tour");
+        app.settings.tutorial_done = false;
+        app.new_game.studio = "Tour Studio".into();
+        app.start_new_game();
+        assert_eq!(app.tutorial, Some(0), "a fresh studio starts the tour");
+
+        // Every page renders, pauses the clock and moves to its screen.
+        for (step, page) in TYCOON_STEPS.iter().enumerate() {
+            app.speed = Speed::X4;
+            run_frames(&mut app, 2);
+            assert_eq!(app.speed, Speed::Paused, "time must stand still during the tour");
+            assert_eq!(app.tutorial, Some(step));
+            if let Some(nav) = page.nav {
+                assert_eq!(app.nav, nav);
+            }
+            tutorial::tycoon_next(&mut app);
+        }
+        assert_eq!(app.tutorial, None);
+        assert!(app.settings.tutorial_done);
+
+        // A second new game does not repeat it; Settings can replay it.
+        app.start_new_game();
+        assert_eq!(app.tutorial, None);
+        tutorial::replay(&mut app);
+        assert_eq!(app.tutorial, Some(0));
+        assert!(!app.settings.tutorial_done && !app.settings.editor_tutorial_done);
+
+        // Skipping also counts as done.
+        tutorial::tycoon_skip(&mut app);
+        assert!(app.settings.tutorial_done);
+        let _ = std::fs::remove_dir_all(app.paths.root());
+    }
+
+    #[test]
+    fn the_editor_tour_starts_with_the_first_code_challenge_only() {
+        use crate::tutorial::{self, EDITOR_STEPS};
+        let mut app = test_app("editor_tour");
+        app.settings.editor_tutorial_done = false;
+        app.new_game.studio = "Tour Studio".into();
+        app.start_new_game();
+
+        // Quizzes have no editor: no tour.
+        let quiz = app.content.challenges.iter().find(|c| c.is_quiz()).map(|c| c.id.clone()).expect("a quiz");
+        app.open_challenge(&quiz, ChallengeContext::Study);
+        assert_eq!(app.editor_tour, None);
+        app.challenge = None;
+
+        let code = app.content.challenges.iter().find(|c| !c.is_quiz()).map(|c| c.id.clone()).expect("code");
+        app.open_challenge(&code, ChallengeContext::Study);
+        assert_eq!(app.editor_tour, Some(0));
+        for _ in 0..EDITOR_STEPS.len() {
+            run_frames(&mut app, 2);
+            tutorial::editor_next(&mut app);
+        }
+        assert_eq!(app.editor_tour, None);
+        assert!(app.settings.editor_tutorial_done);
+
+        // Never again.
+        app.challenge = None;
+        app.open_challenge(&code, ChallengeContext::Study);
+        assert_eq!(app.editor_tour, None);
         let _ = std::fs::remove_dir_all(app.paths.root());
     }
 

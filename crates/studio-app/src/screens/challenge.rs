@@ -94,8 +94,18 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     };
     poll_run(app, &mut view);
 
-    // Game-jam countdown (real time).
+    // Ctrl+Enter = Compile & Test (consumed before the editor can insert a newline).
     let mut action: Option<Action> = None;
+    if view.solved.is_none()
+        && !view.challenge.is_quiz()
+        && !view.running()
+        && matches!(app.toolchain, ToolchainStatus::Ready(_))
+        && ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Enter))
+    {
+        action = Some(Action::Submit);
+    }
+
+    // Game-jam countdown (real time).
     if view.solved.is_none() && !view.expired {
         if let Some(limit) = view.attempt.time_limit_secs {
             view.attempt.elapsed_secs += ui.input(|i| i.stable_dt).min(0.25);
@@ -137,6 +147,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
     if view.running() {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+    }
+    if view.solved.is_none() && !view.challenge.is_quiz() {
+        crate::tutorial::show_editor_tour(app, ui.ctx());
     }
     apply(app, &mut view, action);
     if let Some(v) = app.challenge.take() {
