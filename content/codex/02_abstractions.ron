@@ -1,0 +1,303 @@
+// Rust Codex, part 2: Modules → Testing. Entries unlock when their challenge is solved.
+[
+    (
+        id: "codex_modules_visibility",
+        topic: "modules",
+        title: "Privacy and pub",
+        summary: "Everything is private to its module by default; `pub` opens it up one level at a time.",
+        body: r##"Items (functions, structs, constants, modules) are private by default: only the module they are defined in, and its children, can use them. Mark an item `pub` to expose it to the parent and beyond.
+
+A struct can be public while its fields stay private — that is how you hide representation and enforce invariants through constructors and methods. Make a field `pub` only when any value of that type is valid. Variants of a public enum are always public.
+
+Finer-grained forms exist: `pub(crate)` (visible inside this crate only) and `pub(super)` (visible to the parent module)."##,
+        example: r##"mod engine {
+    pub struct Counter { value: u32 }      // field is private
+    impl Counter {
+        pub fn new() -> Counter { Counter { value: 0 } }
+        pub fn bump(&mut self) { self.value += 1; }
+        pub fn get(&self) -> u32 { self.value }
+    }
+}"##,
+        book_url: "https://doc.rust-lang.org/book/ch07-02-defining-modules-to-control-scope-and-privacy.html",
+        unlock_challenge: Some("modules_01_visibility"),
+    ),
+    (
+        id: "codex_modules_paths",
+        topic: "modules",
+        title: "Paths and the use keyword",
+        summary: "`crate::`, `self::` and `super::` locate items; `use` brings them into scope.",
+        body: r##"An item is named by a path through the module tree. `crate::audio::play` starts at the crate root (absolute); `self::` starts at the current module and `super::` at the parent (relative).
+
+`use` shortens paths: `use std::collections::HashMap;`. Bring a function's PARENT module into scope (`use crate::audio;` then `audio::play()`) so the origin stays visible, but import types and traits directly. Group imports with braces (`use std::{fmt, io};`), rename with `as`, and re-export with `pub use` to shape your public API independently of your file layout."##,
+        example: r##"mod audio {
+    pub mod mixer { pub fn volume() -> u8 { 7 } }
+    pub fn play() -> u8 { self::mixer::volume() }
+}
+use audio::mixer;
+assert_eq!(mixer::volume(), audio::play());"##,
+        book_url: "https://doc.rust-lang.org/book/ch07-04-bringing-paths-into-scope-with-the-use-keyword.html",
+        unlock_challenge: Some("modules_03_predict_paths"),
+    ),
+    (
+        id: "codex_modules_crates",
+        topic: "modules",
+        title: "Packages, crates and workspaces",
+        summary: "A package contains crates; a crate is a tree of modules; a workspace groups packages.",
+        body: r##"A CRATE is the unit the compiler builds: a binary (has `main`) or a library. A PACKAGE is what Cargo manages — a `Cargo.toml` with at least one crate. Modules are the namespaces inside a crate; each `mod name;` normally lives in `name.rs` or `name/mod.rs`.
+
+A WORKSPACE shares one `Cargo.lock` and one `target` directory between several packages — this game is one: `studio-core` is a library, the app depends on it. Dependencies are declared in `Cargo.toml` and resolved from crates.io; features turn optional parts on and off."##,
+        example: r##"# Cargo.toml of a workspace
+[workspace]
+members = ["crates/studio-core", "crates/studio-app"]"##,
+        book_url: "https://doc.rust-lang.org/book/ch14-03-cargo-workspaces.html",
+        unlock_challenge: Some("modules_04_nested_privacy"),
+    ),
+    (
+        id: "codex_traits_basics",
+        topic: "traits",
+        title: "Traits: shared behaviour",
+        summary: "A trait is a set of methods a type promises to provide; default methods come for free.",
+        body: r##"A trait declares behaviour: method signatures, optionally with default bodies. A type opts in with `impl Trait for Type`. Implementors write the required methods and inherit the defaults, which can still be overridden.
+
+Traits are Rust's tool for polymorphism and code reuse (there is no inheritance). The standard library is built from them: `Display`, `Clone`, `Iterator`, `From`, `Add`, `Default`, … Because the "orphan rule" says you may implement a trait only if the trait or the type is local to your crate, impls can never conflict between crates."##,
+        example: r##"trait Renderable {
+    fn glyph(&self) -> char;
+    fn render(&self) -> String {              // default method
+        self.glyph().to_string()
+    }
+}"##,
+        book_url: "https://doc.rust-lang.org/book/ch10-02-traits.html",
+        unlock_challenge: Some("traits_01_renderable"),
+    ),
+    (
+        id: "codex_traits_generics",
+        topic: "traits",
+        title: "Generics and trait bounds",
+        summary: "Write the function once for every type that has the capabilities you need.",
+        body: r##"Generics (`fn largest<T>(items: &[T]) -> &T`) let one definition work for many types. Inside the body the compiler knows nothing about `T`, so you say what you need with trait bounds: `T: PartialOrd + Copy`, or in a `where` clause for readability.
+
+Rust compiles a separate, specialised version for each concrete type (MONOMORPHISATION), so generics are as fast as hand-written code — you pay in compile time and binary size, not at run time. `impl Trait` in argument position is shorthand for an anonymous generic; in return position it means "one concrete type that implements the trait"."##,
+        example: r##"fn strongest<T: PartialOrd>(units: &[T]) -> Option<&T> {
+    let mut best = units.first()?;
+    for u in units { if u > best { best = u; } }
+    Some(best)
+}"##,
+        book_url: "https://doc.rust-lang.org/book/ch10-01-syntax.html",
+        unlock_challenge: Some("traits_02_generic_strongest"),
+    ),
+    (
+        id: "codex_traits_dyn",
+        topic: "traits",
+        title: "Trait objects: dyn Trait",
+        summary: "Store different types behind one interface, at the price of a vtable call.",
+        body: r##"A generic function is monomorphised per type; a list of mixed types needs DYNAMIC dispatch. `Box<dyn Weapon>` (or `&dyn Weapon`) is a fat pointer: the address of the value plus a pointer to a vtable of that type's methods. Each call looks the method up at run time.
+
+Use trait objects when the set of types is open or decided at run time (plugins, heterogeneous collections, GUI widgets). Use generics when you want speed and one type at a time. Only OBJECT-SAFE traits can be made into objects: no methods returning `Self`, no generic methods."##,
+        example: r##"let bag: Vec<Box<dyn Weapon>> = vec![Box::new(Sword), Box::new(Bow { arrows: 4 })];
+let total: u32 = bag.iter().map(|w| w.damage()).sum();"##,
+        book_url: "https://doc.rust-lang.org/book/ch18-02-trait-objects.html",
+        unlock_challenge: Some("traits_03_weapon_objects"),
+    ),
+    (
+        id: "codex_lifetimes_annotations",
+        topic: "lifetimes",
+        title: "Lifetime annotations",
+        summary: "`'a` names how long a reference is valid, so the compiler can relate inputs to outputs.",
+        body: r##"Every reference has a lifetime — the region of code where it is valid. Usually the compiler infers it. When a function returns a reference derived from more than one input, you must say which: `fn pick<'a>(a: &'a str, b: &'a str) -> &'a str`.
+
+An annotation never changes how long a value lives; it DESCRIBES the relationship so the compiler can verify that the result is not used after one of its sources is gone. If the compiler asks for a lifetime, ask yourself: "which argument does the returned reference point into?""##,
+        example: r##"fn pick_longer<'a>(a: &'a str, b: &'a str) -> &'a str {
+    if a.len() >= b.len() { a } else { b }
+}"##,
+        book_url: "https://doc.rust-lang.org/book/ch10-03-lifetime-syntax.html",
+        unlock_challenge: Some("lifetimes_01_longer_name"),
+    ),
+    (
+        id: "codex_lifetimes_structs",
+        topic: "lifetimes",
+        title: "Structs that borrow",
+        summary: "A struct holding a reference needs a lifetime parameter — and gives you zero-copy parsing.",
+        body: r##"If a struct field is a reference, the struct needs a lifetime parameter: `struct Token<'a> { text: &'a str }`. It says "a Token cannot outlive the string it points into" and the compiler enforces it wherever tokens are used.
+
+The payoff is performance: a parser that returns `&str` slices of the input allocates nothing per token. When the data does not live long enough, or the struct must be stored independently, own it (`String`) instead — borrowing is an optimisation, not an obligation."##,
+        example: r##"struct Token<'a> { text: &'a str, line: usize }
+
+fn tokenize(src: &str) -> Vec<Token<'_>> {
+    src.split_whitespace().map(|text| Token { text, line: 1 }).collect()
+}"##,
+        book_url: "https://doc.rust-lang.org/book/ch10-03-lifetime-syntax.html",
+        unlock_challenge: Some("lifetimes_02_tokens"),
+    ),
+    (
+        id: "codex_lifetimes_elision",
+        topic: "lifetimes",
+        title: "Lifetime elision",
+        summary: "Three rules let the compiler fill in the obvious lifetimes so you rarely write them.",
+        body: r##"You can often leave lifetimes out because of three elision rules: (1) each reference parameter gets its own lifetime; (2) if there is exactly ONE input lifetime, the output uses it; (3) if one parameter is `&self` or `&mut self`, outputs use the lifetime of `self`.
+
+`fn first_word(s: &str) -> &str` therefore means `fn first_word<'a>(s: &'a str) -> &'a str`. When elision cannot decide (two reference parameters, no `self`) you get error E0106 and must annotate. `'static` is the lifetime of data that lives for the whole program, such as string literals."##,
+        example: r##"fn first_word(s: &str) -> &str { s.split(' ').next().unwrap_or("") }
+fn label() -> &'static str { "ready" }       // string literal: 'static"##,
+        book_url: "https://doc.rust-lang.org/book/ch10-03-lifetime-syntax.html",
+        unlock_challenge: Some("lifetimes_03_review_dangling"),
+    ),
+    (
+        id: "codex_iterators_closures",
+        topic: "iterators",
+        title: "Closures",
+        summary: "Anonymous functions that capture their environment by reference, mutable reference or move.",
+        body: r##"A closure is written `|args| body` and can use variables from the surrounding scope. The compiler picks the lightest capture: shared borrow if it only reads, mutable borrow if it modifies, by value if it consumes. `move |…|` forces by-value capture — required when a closure must outlive the function that made it, such as a thread.
+
+Closures implement `Fn` (can be called many times, only reads), `FnMut` (can mutate captured state) or `FnOnce` (may consume captured values, callable once). Functions taking closures declare which they need: `fn apply(f: impl Fn(i32) -> i32)`."##,
+        example: r##"let mut clicks = 0;
+let mut record = || clicks += 1;   // captures `clicks` by &mut
+record();
+record();
+assert_eq!(clicks, 2);"##,
+        book_url: "https://doc.rust-lang.org/book/ch13-01-closures.html",
+        unlock_challenge: Some("iterators_01_closure_borrow"),
+    ),
+    (
+        id: "codex_iterators_adapters",
+        topic: "iterators",
+        title: "Iterator adapters and consumers",
+        summary: "Lazy adapters (`map`, `filter`) describe a pipeline; consumers (`sum`, `collect`) run it.",
+        body: r##"Iterators are lazy: `map`, `filter`, `take`, `skip`, `zip`, `enumerate`, `rev`, `chain`, `windows`/`chunks` (on slices) only build a new iterator and do nothing until a CONSUMER pulls items: `collect`, `sum`, `count`, `min`/`max`, `fold`, `any`/`all`, `find`, `for` loops.
+
+Iterator chains compile to the same machine code as hand-written loops (zero-cost abstraction) and are usually easier to get right: no index variables, no off-by-one. `iter()` borrows items, `iter_mut()` borrows them mutably and `into_iter()` consumes the collection."##,
+        example: r##"let total: u32 = hits
+    .iter()
+    .filter(|(_, crit)| *crit)
+    .map(|(damage, _)| damage * 2)
+    .sum();"##,
+        book_url: "https://doc.rust-lang.org/book/ch13-02-iterators.html",
+        unlock_challenge: Some("iterators_02_loop_to_chain"),
+    ),
+    (
+        id: "codex_iterators_custom",
+        topic: "iterators",
+        title: "Implementing Iterator",
+        summary: "Write `next` and your type works with `for` and every adapter in the standard library.",
+        body: r##"The `Iterator` trait needs just an `Item` type and `fn next(&mut self) -> Option<Self::Item>`. Return `Some(item)` while there is more and `None` when finished. All the adapters and consumers are default methods built on `next`.
+
+Implement `IntoIterator` for your collection types so that `for x in &collection` works, and remember that iterators are STATE MACHINES — that is why `next` takes `&mut self`. `std::iter::from_fn` and `std::iter::successors` create iterators from closures without a new type."##,
+        example: r##"struct Wave { spawned: u32, count: u32 }
+impl Iterator for Wave {
+    type Item = u32;
+    fn next(&mut self) -> Option<u32> {
+        if self.spawned == self.count { return None; }
+        self.spawned += 1;
+        Some(10 * self.spawned)
+    }
+}"##,
+        book_url: "https://doc.rust-lang.org/book/ch13-02-iterators.html",
+        unlock_challenge: Some("iterators_03_wave_iterator"),
+    ),
+    (
+        id: "codex_smart_box",
+        topic: "smart_pointers",
+        title: "Box<T>: owning heap data",
+        summary: "One owner, one heap allocation — essential for recursive types and trait objects.",
+        body: r##"`Box<T>` puts a value on the heap and owns it; dropping the box frees it. A box is exactly one pointer wide, which makes it the standard way to build types whose size would otherwise be infinite (linked lists, trees, ASTs) and to hold trait objects (`Box<dyn Trait>`).
+
+`Box<T>` implements `Deref`, so you can use it almost like the value itself. Moving a big struct into a `Box` is also a cheap way to pass it around without memcpy-ing the whole thing."##,
+        example: r##"enum Tree {
+    Leaf(i32),
+    Node(Box<Tree>, Box<Tree>),
+}"##,
+        book_url: "https://doc.rust-lang.org/book/ch15-01-box.html",
+        unlock_challenge: Some("smart_pointers_01_boxed_dialogue"),
+    ),
+    (
+        id: "codex_smart_rc",
+        topic: "smart_pointers",
+        title: "Rc<T> and Arc<T>: shared ownership",
+        summary: "Several owners, freed when the last one goes away — `Rc` for one thread, `Arc` for many.",
+        body: r##"`Rc<T>` (reference counted) lets multiple parts of a program own the same value. `Rc::clone(&x)` only increments a counter; the value is dropped when the last `Rc` disappears. `Rc::strong_count` shows the number of owners and `Rc::ptr_eq` tells whether two handles point to the same allocation.
+
+`Rc` is single-threaded — its counter is not atomic, so it is not `Send`. Use `Arc<T>` to share across threads. Both give only SHARED access to the contents; to mutate shared data combine them with interior mutability: `Rc<RefCell<T>>` or `Arc<Mutex<T>>`. Beware cycles — use `Weak<T>` for back-references."##,
+        example: r##"use std::rc::Rc;
+let tex = Rc::new(String::from("grass.png"));
+let a = Rc::clone(&tex);
+assert_eq!(Rc::strong_count(&tex), 2);
+drop(a);
+assert_eq!(Rc::strong_count(&tex), 1);"##,
+        book_url: "https://doc.rust-lang.org/book/ch15-04-rc.html",
+        unlock_challenge: Some("smart_pointers_02_shared_textures"),
+    ),
+    (
+        id: "codex_smart_refcell",
+        topic: "smart_pointers",
+        title: "RefCell<T>: interior mutability",
+        summary: "Borrowing rules checked at run time — mutation through a shared reference, with a panic if you break them.",
+        body: r##"`RefCell<T>` lets you mutate a value through `&RefCell<T>`. Instead of the compiler, the cell checks the borrowing rules at RUN TIME: `borrow()` gives a shared guard, `borrow_mut()` an exclusive one, and breaking the rules (two `borrow_mut` at once) panics with `BorrowMutError`. `try_borrow_mut` returns a `Result` instead.
+
+Use it sparingly: ordinary `&mut` is checked for free and cannot panic. The classic combination `Rc<RefCell<T>>` is the single-threaded way to have shared, mutable data (graphs, GUI trees). `Cell<T>` is the lighter option for small `Copy` values."##,
+        example: r##"use std::cell::RefCell;
+let chest = RefCell::new(50);
+*chest.borrow_mut() += 5;
+assert_eq!(*chest.borrow(), 55);"##,
+        book_url: "https://doc.rust-lang.org/book/ch15-05-interior-mutability.html",
+        unlock_challenge: Some("smart_pointers_03_refcell_transfer"),
+    ),
+    (
+        id: "codex_testing_unit",
+        topic: "testing",
+        title: "Unit tests",
+        summary: "`#[test]` functions in a `#[cfg(test)]` module, run with `cargo test`.",
+        body: r##"A test is a function marked `#[test]`; it passes unless it panics. Put unit tests in a `mod tests` annotated `#[cfg(test)]` at the bottom of the file, with `use super::*;` to reach the code under test — the module only exists in test builds.
+
+Assert with `assert!(cond)`, `assert_eq!(left, right)` and `assert_ne!`; add a message as the last argument. `cargo test` runs tests in parallel threads and captures their output (use `-- --nocapture` to see it, `-- --test-threads=1` to serialise). Filter by name with `cargo test name_part`."##,
+        example: r##"#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn caps_at_max() {
+        assert_eq!(clamp_health(150, 100), 100);
+    }
+}"##,
+        book_url: "https://doc.rust-lang.org/book/ch11-01-writing-tests.html",
+        unlock_challenge: Some("testing_01_clamp_with_tests"),
+    ),
+    (
+        id: "codex_testing_panics",
+        topic: "testing",
+        title: "Testing failures: should_panic and Result",
+        summary: "Test that bad input fails loudly, and use `?` inside tests by returning `Result`.",
+        body: r##"`#[should_panic(expected = "text")]` makes a test pass only if the code panics AND the message contains the text — so an unrelated panic cannot sneak through. Document such behaviour in a `# Panics` section of the function's doc comment.
+
+A test may also return `Result<(), E>`: it passes on `Ok(())` and fails on `Err`, which lets you use `?` instead of `unwrap()` and get the real error in the failure output. (You cannot combine that with `#[should_panic]`.) Mark slow or unfinished tests `#[ignore]` and run them with `cargo test -- --ignored`."##,
+        example: r##"#[test]
+#[should_panic(expected = "no frames")]
+fn empty_input_panics() {
+    average_frame_time(&[]);
+}
+
+#[test]
+fn parses() -> Result<(), std::num::ParseIntError> {
+    assert_eq!(parse_level(" 7 ")?, 7);
+    Ok(())
+}"##,
+        book_url: "https://doc.rust-lang.org/book/ch11-01-writing-tests.html",
+        unlock_challenge: Some("testing_02_should_panic"),
+    ),
+    (
+        id: "codex_testing_organisation",
+        topic: "testing",
+        title: "Doc comments, doc tests and integration tests",
+        summary: "`///` comments become documentation whose code examples are tested; `tests/` holds black-box tests.",
+        body: r##"Triple-slash comments (`///`) document the item below them in Markdown; `//!` documents the enclosing module or crate. Code blocks inside doc comments are compiled and run by `cargo test` as DOC TESTS, so your examples can never go stale. Conventional sections are `# Examples`, `# Panics`, `# Errors` and `# Safety`.
+
+Integration tests live in the top-level `tests/` directory; each file is compiled as a separate crate that can use only your PUBLIC API — they test the library the way a user sees it. `cargo test --doc`, `--lib` and `--test name` select which kind to run."##,
+        example: r##"/// Adds two numbers.
+///
+/// # Examples
+/// ```
+/// assert_eq!(my_crate::add(2, 3), 5);
+/// ```
+pub fn add(a: i32, b: i32) -> i32 { a + b }"##,
+        book_url: "https://doc.rust-lang.org/book/ch11-03-test-organization.html",
+        unlock_challenge: Some("testing_03_result_test"),
+    ),
+]

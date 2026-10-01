@@ -9,8 +9,8 @@ use studio_core::challenges::validate::{validate_all, ValidateOptions};
 use studio_core::challenges::{RunnerConfig, Toolchain};
 use studio_core::data::{ChallengeKind, ContentLibrary};
 
-/// Raise as content grows; the final target for the first full version is 80.
-const MIN_CHALLENGES: usize = 10;
+/// The curriculum promises at least this many verified challenges.
+const MIN_CHALLENGES: usize = 80;
 
 fn lines(text: &str) -> HashSet<&str> {
     text.lines().map(str::trim).filter(|l| !l.is_empty()).collect()
@@ -78,6 +78,51 @@ fn every_challenge_has_complete_teaching_material() {
 }
 
 #[test]
+fn every_topic_is_well_covered() {
+    let lib = ContentLibrary::embedded();
+    for topic in &lib.topics {
+        let n = lib.challenges_in_topic(&topic.id).count();
+        assert!(n >= 3, "topic `{}` has only {n} challenges", topic.id);
+        let codex = lib.codex.iter().filter(|e| e.topic == topic.id).count();
+        assert!(codex >= 2, "topic `{}` has only {codex} codex entries", topic.id);
+    }
+}
+
+#[test]
+fn all_eight_challenge_kinds_are_used_several_times() {
+    let lib = ContentLibrary::embedded();
+    for kind in ChallengeKind::ALL {
+        let n = lib.challenges.iter().filter(|c| c.kind == kind).count();
+        assert!(n >= 4, "{kind:?} is used by only {n} challenges");
+    }
+}
+
+#[test]
+fn codex_entries_are_complete() {
+    let lib = ContentLibrary::embedded();
+    let mut ids = HashSet::new();
+    for e in &lib.codex {
+        assert!(ids.insert(&e.id), "duplicate codex id {}", e.id);
+        assert!(e.title.len() >= 5 && e.summary.len() >= 20, "{}: title/summary", e.id);
+        assert!(e.body.len() >= 200, "{}: body too short", e.id);
+        assert!(!e.example.trim().is_empty(), "{}: needs an example", e.id);
+        assert!(!e.book_url.is_empty(), "{}: needs a reading link", e.id);
+    }
+}
+
+#[test]
+fn challenges_form_a_solvable_prerequisite_chain() {
+    // Every prerequisite exists, lives in the same topic and appears earlier in the file order.
+    let lib = ContentLibrary::embedded();
+    for (i, c) in lib.challenges.iter().enumerate() {
+        for p in &c.prerequisites {
+            let j = lib.challenges.iter().position(|x| &x.id == p);
+            assert!(j.is_some_and(|j| j < i), "{}: prerequisite `{p}` must exist and come first", c.id);
+        }
+    }
+}
+
+#[test]
 fn links_point_at_real_pages() {
     let book = lines(include_str!("data/book_pages.txt"));
     let rbe = lines(include_str!("data/rbe_pages.txt"));
@@ -113,6 +158,8 @@ fn links_point_at_real_pages() {
                 "https://doc.rust-lang.org/cargo/",
                 "https://doc.rust-lang.org/rustdoc/",
                 "https://rust-lang.github.io/",
+                "https://veykril.github.io/tlborm/",
+                "https://nnethercote.github.io/perf-book/",
                 "https://doc.rust-lang.org/error_codes/",
             ]
             .iter()

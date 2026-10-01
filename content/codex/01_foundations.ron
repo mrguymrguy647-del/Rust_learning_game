@@ -1,0 +1,373 @@
+// Rust Codex, part 1: Basics → Collections. Entries unlock when their challenge is solved.
+[
+    (
+        id: "codex_basics_variables",
+        topic: "basics",
+        title: "Variables, mutability and shadowing",
+        summary: "`let` bindings are immutable by default; `mut` and shadowing are how you change things.",
+        body: r##"A variable introduced with `let` cannot be reassigned. That default makes code easier to reason about: if you see `let score = 10;` you know `score` is 10 for as long as it is in scope.
+
+When you really need to change a value, say so with `mut`. The compiler then allows reassignment — but only of the same type.
+
+Shadowing is a different tool: a new `let` with the same name creates a brand new variable that hides the old one. Because it is a new variable, it may even have a different type (for instance, turning a `&str` into a number). Constants (`const`) are always immutable, need a type annotation and are inlined at compile time."##,
+        example: r##"let lives = 3;          // immutable
+let mut score = 0;      // mutable
+score += 10;            // fine
+
+let input = "42";
+let input: i32 = input.parse().unwrap(); // shadowing: new type"##,
+        book_url: "https://doc.rust-lang.org/book/ch03-01-variables-and-mutability.html",
+    ),
+    (
+        id: "codex_basics_types",
+        topic: "basics",
+        title: "Scalar types and inference",
+        summary: "Integers, floats, booleans and chars — and why you rarely need to write the type.",
+        body: r##"Rust has four scalar families: integers (`i8`…`i128`, `u8`…`u128`, `isize`, `usize`), floating point (`f32`, `f64`), `bool` and `char` (a 4-byte Unicode scalar value).
+
+The compiler infers types from usage, so `let x = 5;` is an `i32` unless something forces another type. Integer overflow panics in debug builds and wraps in release builds; use `checked_add`, `wrapping_add`, `saturating_add` or `overflowing_add` when you must be explicit about it.
+
+Conversions between numeric types never happen silently: write `x as f64` (lossy casts) or `f64::from(x)` (lossless conversions)."##,
+        example: r##"let hp: u32 = 100;
+let ratio = hp as f64 / 3.0;
+let capped = hp.saturating_sub(250); // 0, never underflows"##,
+        book_url: "https://doc.rust-lang.org/book/ch03-02-data-types.html",
+        unlock_challenge: Some("basics_02_mutable_lives"),
+    ),
+    (
+        id: "codex_basics_control_flow",
+        topic: "basics",
+        title: "if, loop, while and for",
+        summary: "Control flow constructs are expressions — and `for` over a range is the idiomatic loop.",
+        body: r##"`if` is an expression: both branches must have the same type, so `let sign = if x < 0 { -1 } else { 1 };` works without a ternary operator. Conditions must be `bool` — Rust never converts numbers to booleans.
+
+Rust has three loops. `loop` repeats forever (and `break value` returns a value from it), `while` repeats while a condition holds, and `for` iterates over anything iterable. Prefer `for` with ranges (`0..10`, `0..=10`) or iterators over manual index counters: it cannot go out of bounds."##,
+        example: r##"let mut total = 0;
+for tick in 1..=5 {
+    if tick % 2 == 0 {
+        continue;
+    }
+    total += tick;
+}
+assert_eq!(total, 9);"##,
+        book_url: "https://doc.rust-lang.org/book/ch03-05-control-flow.html",
+        unlock_challenge: Some("basics_05_tick_loop"),
+    ),
+    (
+        id: "codex_ownership_rules",
+        topic: "ownership",
+        title: "The three ownership rules",
+        summary: "Each value has one owner; when the owner goes out of scope the value is dropped.",
+        body: r##"1. Every value in Rust has exactly one owner.
+2. There can only be one owner at a time.
+3. When the owner goes out of scope, the value is dropped.
+
+Assigning a heap-owning value (`String`, `Vec`, `Box`, …) to another variable or passing it to a function MOVES it: the old binding can no longer be used. That is what prevents double frees without a garbage collector.
+
+If you hit "borrow of moved value" (E0382), you have three honest options: let the function borrow instead (`&T`), clone on purpose, or restructure so the new owner returns the value."##,
+        example: r##"let a = String::from("texture");
+let b = a;              // moved
+// println!("{a}");     // error[E0382]: borrow of moved value
+println!("{b}");"##,
+        book_url: "https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html",
+        unlock_challenge: Some("ownership_01_asset_move"),
+    ),
+    (
+        id: "codex_ownership_copy_clone",
+        topic: "ownership",
+        title: "Copy, Clone and moves",
+        summary: "Small plain-data types are copied automatically; everything else is moved unless you `.clone()`.",
+        body: r##"Types that live entirely on the stack and are trivially duplicated — integers, floats, `bool`, `char`, tuples of such types — implement the `Copy` trait: using them again after an assignment is fine, because the assignment copies.
+
+Anything that owns a resource (a `String`, a `Vec`, a `Box`) is `Clone` but not `Copy`: duplicating it needs real work, so Rust makes you write `.clone()` explicitly. A good rule of thumb: every `.clone()` should be a decision, not a way to silence the compiler.
+
+You can derive both traits on your own structs (`#[derive(Clone, Copy)]`), but `Copy` is only allowed when all fields are `Copy`."##,
+        example: r##"let a = 5;
+let b = a;              // copy: both usable
+let s1 = String::from("hi");
+let s2 = s1.clone();    // explicit deep copy
+println!("{a} {b} {s1} {s2}");"##,
+        book_url: "https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html",
+        unlock_challenge: Some("ownership_02_copy_or_move_review"),
+    ),
+    (
+        id: "codex_ownership_drop",
+        topic: "ownership",
+        title: "Drop and scope (RAII)",
+        summary: "Values clean up after themselves when they go out of scope — in reverse order of declaration.",
+        body: r##"Rust runs a value's destructor (the `Drop` trait) exactly when its owner goes out of scope. That is RAII: files close, locks release and memory frees without a `finally` block or a garbage collector.
+
+Locals are dropped in REVERSE order of declaration. A value that was moved elsewhere is not dropped by its old owner. You can end a value's life early with `drop(value)` (it just takes ownership and lets it go out of scope).
+
+Implementing `Drop` yourself is rarely needed, but it is a great way to see ownership in action."##,
+        example: r##"struct Asset(&'static str);
+impl Drop for Asset {
+    fn drop(&mut self) { println!("drop {}", self.0); }
+}
+fn main() {
+    let _a = Asset("first");
+    let _b = Asset("second");
+} // prints: drop second, drop first"##,
+        book_url: "https://doc.rust-lang.org/book/ch15-03-drop.html",
+        unlock_challenge: Some("ownership_05_predict_drop"),
+    ),
+    (
+        id: "codex_borrowing_rules",
+        topic: "borrowing",
+        title: "Borrowing: many readers or one writer",
+        summary: "At any time you may have either any number of `&T` or exactly one `&mut T`.",
+        body: r##"A reference lets you use a value without taking ownership. `&T` is a shared (read-only) borrow; `&mut T` is an exclusive (read-write) borrow.
+
+The rule that keeps Rust memory-safe: at any moment there may be EITHER many shared references OR a single mutable reference to a value — never both. The compiler enforces this at compile time (errors E0499 and E0502), which rules out data races and iterator-invalidation bugs.
+
+References must also never outlive the value they point to, so the compiler rejects dangling references (E0106, E0515, E0597)."##,
+        example: r##"let mut hp = 10;
+let r1 = &hp;
+let r2 = &hp;          // many readers: fine
+println!("{r1} {r2}");
+let w = &mut hp;       // one writer, after the readers are done
+*w += 5;"##,
+        book_url: "https://doc.rust-lang.org/book/ch04-02-references-and-borrowing.html",
+        unlock_challenge: Some("borrowing_02_mut_borrow_conflict"),
+    ),
+    (
+        id: "codex_borrowing_slices",
+        topic: "borrowing",
+        title: "Slices: borrowing a part",
+        summary: "`&str` and `&[T]` are views into someone else's data — prefer them as function parameters.",
+        body: r##"A slice is a reference to a contiguous part of a collection: `&s[0..5]` is a `&str`, `&v[1..3]` is a `&[T]`. It stores a pointer and a length and owns nothing.
+
+Accept `&str` instead of `&String` and `&[T]` instead of `&Vec<T>` in your function signatures: callers can then pass a String, a literal, an array, a vector or part of any of them. Deref coercion makes `&String` → `&str` automatic.
+
+Slicing a string uses BYTE offsets and panics if you cut through a multi-byte character; use `char_indices` or `split_*` helpers when text may not be ASCII."##,
+        example: r##"fn first_word(s: &str) -> &str {
+    s.split_whitespace().next().unwrap_or("")
+}
+let line = String::from("open the door");
+assert_eq!(first_word(&line), "open");
+assert_eq!(first_word("hello world"), "hello");"##,
+        book_url: "https://doc.rust-lang.org/book/ch04-03-slices.html",
+        unlock_challenge: Some("borrowing_01_first_word"),
+    ),
+    (
+        id: "codex_borrowing_nll",
+        topic: "borrowing",
+        title: "Non-lexical lifetimes",
+        summary: "A borrow lasts until its LAST USE, not until the end of the block.",
+        body: r##"Since Rust 2018 a reference is considered alive only until the last place it is used — not until the closing brace of its scope. That is why this compiles: the shared borrow `first` is finished before the mutable borrow starts.
+
+When the borrow checker complains, look for a later use of the old reference. Often the fix is to reorder two lines, finish with the reference earlier, or copy out the small value you need (a number, an index) instead of keeping the borrow around."##,
+        example: r##"let mut items = vec![1, 2, 3];
+let first = items[0];   // copy the value out
+items.push(first);      // fine: no borrow is alive
+println!("{items:?}");"##,
+        book_url: "https://doc.rust-lang.org/book/ch04-02-references-and-borrowing.html",
+        unlock_challenge: Some("borrowing_04_split_dialogue"),
+    ),
+    (
+        id: "codex_structs_basics",
+        topic: "structs",
+        title: "Structs and field init shorthand",
+        summary: "Named-field structs group related data; tuple and unit structs are lighter variants.",
+        body: r##"A struct bundles named fields into one type. Create one by naming each field; if a variable has the same name as the field you may write just the name (field init shorthand). Struct update syntax (`..other`) fills the remaining fields from another value.
+
+Tuple structs (`struct Meters(f32);`) give a distinct type to a tuple — the NEWTYPE pattern prevents mixing up two `f32`s. Unit structs (`struct Marker;`) have no fields and are useful for traits.
+
+Add `#[derive(Debug, Clone, PartialEq)]` and friends to get printing, copying and comparison for free."##,
+        example: r##"#[derive(Debug, Clone)]
+struct Player { name: String, hp: u32 }
+
+let name = String::from("Ada");
+let a = Player { name, hp: 100 };
+let b = Player { name: String::from("Bob"), ..a.clone() };
+println!("{a:?} {b:?}");"##,
+        book_url: "https://doc.rust-lang.org/book/ch05-01-defining-structs.html",
+        unlock_challenge: Some("structs_01_player_struct"),
+    ),
+    (
+        id: "codex_structs_methods",
+        topic: "structs",
+        title: "Methods and associated functions",
+        summary: "`impl` blocks add methods (they take `self`) and constructors like `new` (they don't).",
+        body: r##"Functions inside `impl Type { … }` are associated with the type. If the first parameter is `self`, `&self` or `&mut self`, it is a method called with dot syntax: `player.heal(5)`. Otherwise it is an associated function called with `::`, such as the conventional constructor `Player::new(…)`.
+
+Choose the receiver by what the method needs: `&self` to read, `&mut self` to modify, `self` to consume (for example, a method that turns a builder into the finished value). Rust has no constructors — `new` is only a convention."##,
+        example: r##"impl Player {
+    fn new(name: &str) -> Player {
+        Player { name: name.to_string(), hp: 100 }
+    }
+    fn heal(&mut self, amount: u32) {
+        self.hp = (self.hp + amount).min(100);
+    }
+}"##,
+        book_url: "https://doc.rust-lang.org/book/ch05-03-method-syntax.html",
+        unlock_challenge: Some("structs_02_item_stack"),
+    ),
+    (
+        id: "codex_structs_builder",
+        topic: "structs",
+        title: "The builder pattern",
+        summary: "Configure complicated values step by step with chained methods that return `Self`.",
+        body: r##"When a struct has many optional settings, a builder keeps construction readable: start from sensible defaults and chain methods that each take `mut self` and return `Self`.
+
+Because each method consumes the builder and returns it, the whole chain moves one value along without a single clone. The final `build()` (or the last chained call) produces the finished struct."##,
+        example: r##"let enemy = EnemyBuilder::new("Slime")
+    .hp(30)
+    .speed(1.5)
+    .build();"##,
+        book_url: "https://doc.rust-lang.org/book/ch05-03-method-syntax.html",
+        unlock_challenge: Some("structs_03_enemy_builder"),
+    ),
+    (
+        id: "codex_enums_basics",
+        topic: "enums",
+        title: "Enums carry data",
+        summary: "Each variant can hold different data — an enum is a type that is exactly one of several shapes.",
+        body: r##"An enum lists the possible variants of a value. Unlike enums in many languages, each Rust variant can carry its own data: unit-like (`Quit`), tuple-like (`Move(i32, i32)`) or struct-like (`Spawn { x: f32, y: f32 }`).
+
+That makes invalid states unrepresentable: a game that is `Paused` simply has no `score_for_this_frame` field to misuse. Combined with `match`, enums are the main tool for modelling state machines, messages and parsed commands."##,
+        example: r##"enum GameState {
+    Menu,
+    Playing { level: u32 },
+    GameOver(u32),
+}"##,
+        book_url: "https://doc.rust-lang.org/book/ch06-01-defining-an-enum.html",
+        unlock_challenge: Some("enums_01_game_state"),
+    ),
+    (
+        id: "codex_enums_match",
+        topic: "enums",
+        title: "match is exhaustive",
+        summary: "The compiler makes you handle every variant — adding a new one finds every place to update.",
+        body: r##"`match` compares a value against patterns, top to bottom. It must be EXHAUSTIVE: every possible value has to be covered, or the program does not compile (E0004). The catch-all `_` pattern handles "everything else", but overusing it throws away the safety net: with an explicit list of variants, the day you add one the compiler points at every `match` that needs a new arm.
+
+Patterns can destructure data, bind names, test ranges (`1..=5`), combine alternatives (`A | B`) and add guards (`if cond`). Use `if let` or `let … else` when you care about only one pattern."##,
+        example: r##"match state {
+    GameState::Menu => "menu".to_string(),
+    GameState::Playing { level } => format!("level {level}"),
+    GameState::GameOver(score) if score > 1000 => "high score!".to_string(),
+    GameState::GameOver(_) => "game over".to_string(),
+}"##,
+        book_url: "https://doc.rust-lang.org/book/ch06-02-match.html",
+        unlock_challenge: Some("enums_02_non_exhaustive"),
+    ),
+    (
+        id: "codex_enums_option",
+        topic: "enums",
+        title: "Option instead of null",
+        summary: "A value that may be missing is `Option<T>` — and you must deal with the `None` case.",
+        body: r##"Rust has no null. A value that might be absent has the type `Option<T>`, which is either `Some(value)` or `None`. Because `Option<T>` is a different type from `T`, you cannot use it by accident: the compiler forces you to decide what happens when it is empty.
+
+Combinators make chains pleasant: `map` transforms the inside, `and_then` chains operations that may fail, `unwrap_or` / `unwrap_or_default` provide fallbacks, `ok_or` turns an `Option` into a `Result`, and `?` returns `None` early from a function that itself returns an `Option`."##,
+        example: r##"fn first_even(v: &[i32]) -> Option<i32> {
+    v.iter().copied().find(|n| n % 2 == 0)
+}
+let doubled = first_even(&[1, 3, 4]).map(|n| n * 2); // Some(8)"##,
+        book_url: "https://doc.rust-lang.org/book/ch06-01-defining-an-enum.html",
+        unlock_challenge: Some("enums_04_option_chain"),
+    ),
+    (
+        id: "codex_errors_result",
+        topic: "errors",
+        title: "Result and recoverable errors",
+        summary: "Functions that can fail return `Result<T, E>`; callers decide how to react.",
+        body: r##"`Result<T, E>` is `Ok(value)` or `Err(error)`. It is how Rust handles failures you can reasonably recover from: a file that does not exist, a string that is not a number, a network that is down.
+
+You must handle a `Result` (the compiler warns if you ignore one). `match` it, use `if let`, or provide a fallback with `unwrap_or`. Reserve `panic!`, `unwrap` and `expect` for bugs and impossible states — in libraries a panic is almost never the right way to report bad input."##,
+        example: r##"match "42x".parse::<u32>() {
+    Ok(n) => println!("score {n}"),
+    Err(e) => println!("bad score: {e}"),
+}"##,
+        book_url: "https://doc.rust-lang.org/book/ch09-02-recoverable-errors-with-result.html",
+        unlock_challenge: Some("errors_01_parse_score"),
+    ),
+    (
+        id: "codex_errors_question",
+        topic: "errors",
+        title: "The ? operator",
+        summary: "`?` returns early with the error, or unwraps the success value — one character instead of a `match`.",
+        body: r##"Inside a function that returns `Result`, `expr?` evaluates `expr`; on `Ok(v)` it gives you `v`, on `Err(e)` it immediately returns `Err(From::from(e))` from the whole function. The same works for `Option` in functions returning `Option`.
+
+The `From::from` call is why `?` can convert between error types: if your error type implements `From<io::Error>`, a plain `?` on an `io::Result` turns the error into yours automatically. `main` itself may return `Result<(), E>` so you can use `?` there too."##,
+        example: r##"fn load(path: &str) -> Result<u32, Box<dyn std::error::Error>> {
+    let text = std::fs::read_to_string(path)?;
+    let n = text.trim().parse::<u32>()?;
+    Ok(n)
+}"##,
+        book_url: "https://doc.rust-lang.org/book/ch09-02-recoverable-errors-with-result.html",
+        unlock_challenge: Some("errors_02_question_mark"),
+    ),
+    (
+        id: "codex_errors_custom",
+        topic: "errors",
+        title: "Custom error types",
+        summary: "An enum of everything that can go wrong, with `Display`, `Error` and `From` impls.",
+        body: r##"Real programs fail in several different ways. Model that with an enum: one variant per failure, carrying useful details. Implement `std::fmt::Display` (the human message) and `std::error::Error` (so it works with `Box<dyn Error>` and `?`).
+
+Add `impl From<io::Error> for MyError` and `impl From<ParseIntError> for MyError` and the `?` operator converts underlying errors automatically. Libraries often use the `thiserror` crate to generate this boilerplate; applications often use `anyhow`. Understanding the manual version first makes both crates obvious."##,
+        example: r##"enum SaveError {
+    Io(std::io::Error),
+    Corrupt(String),
+}
+impl From<std::io::Error> for SaveError {
+    fn from(e: std::io::Error) -> Self { SaveError::Io(e) }
+}"##,
+        book_url: "https://doc.rust-lang.org/book/ch09-03-to-panic-or-not-to-panic.html",
+        unlock_challenge: Some("errors_03_save_error_type"),
+    ),
+    (
+        id: "codex_collections_vec",
+        topic: "collections",
+        title: "Vec: the growable array",
+        summary: "`Vec<T>` is the default collection: push at the back, index, iterate, sort.",
+        body: r##"`Vec<T>` stores elements contiguously on the heap and grows as needed. Pushing and popping at the END is cheap (amortised O(1)); inserting or removing at the front or middle shifts elements (O(n)).
+
+Index with `v[i]` (panics when out of range) or `v.get(i)` (returns an `Option`). Iterate with `for x in &v`, `&mut v` or `v` (consuming). Handy helpers: `sort`, `sort_by_key`, `dedup`, `retain`, `extend`, `windows`, `chunks`. `Vec::with_capacity(n)` avoids re-allocations when you know the size."##,
+        example: r##"let mut scores = vec![30, 10, 20];
+scores.push(40);
+scores.sort();
+let best = scores.last();           // Some(&40)
+let total: i32 = scores.iter().sum();"##,
+        book_url: "https://doc.rust-lang.org/book/ch08-01-vectors.html",
+        unlock_challenge: Some("collections_01_inventory_counts"),
+    ),
+    (
+        id: "codex_collections_hashmap",
+        topic: "collections",
+        title: "HashMap and the entry API",
+        summary: "Key-value lookup in O(1); `entry().or_insert()` is the idiom for \"insert or update\".",
+        body: r##"`HashMap<K, V>` maps keys to values; keys must implement `Eq + Hash`. Lookups, inserts and removals are O(1) on average, and iteration order is unspecified (use `BTreeMap` for sorted keys).
+
+`map.get(&k)` returns `Option<&V>`; `get_mut` gives `Option<&mut V>`. To insert or update in one lookup use the entry API: `*map.entry(word).or_insert(0) += 1;` counts words without checking for the key first. `HashSet<T>` is a map with no values — perfect for "have I seen this?"."##,
+        example: r##"use std::collections::HashMap;
+let mut counts: HashMap<&str, u32> = HashMap::new();
+for w in ["a", "b", "a"] {
+    *counts.entry(w).or_insert(0) += 1;
+}
+assert_eq!(counts["a"], 2);"##,
+        book_url: "https://doc.rust-lang.org/book/ch08-03-hash-maps.html",
+        unlock_challenge: Some("collections_02_leaderboard"),
+    ),
+    (
+        id: "codex_collections_choosing",
+        topic: "collections",
+        title: "Choosing the right collection",
+        summary: "Vec by default; VecDeque for queues; HashMap/HashSet for lookup; BTreeMap for sorted order.",
+        body: r##"Most of the time `Vec<T>` is the right answer. Reach for something else when the access pattern demands it:
+
+• `VecDeque<T>` — push/pop at both ends in O(1): queues and sliding windows.
+• `HashMap<K, V>` / `HashSet<T>` — fast lookup and membership by key.
+• `BTreeMap<K, V>` / `BTreeSet<T>` — keys kept sorted; range queries.
+• `BinaryHeap<T>` — always gives the largest item first: priority queues.
+
+A loop that calls `v.contains(x)` or `v.remove(0)` on a big Vec is almost always a sign that you chose the wrong collection (O(n²) work in total)."##,
+        example: r##"use std::collections::{HashSet, VecDeque};
+let seen: HashSet<u32> = [1, 2, 3].into_iter().collect();
+assert!(seen.contains(&2));       // O(1), unlike Vec::contains
+
+let mut queue = VecDeque::from([1, 2, 3]);
+queue.pop_front();                // O(1), unlike Vec::remove(0)"##,
+        book_url: "https://doc.rust-lang.org/std/collections/index.html#when-should-you-use-which-collection",
+        unlock_challenge: Some("collections_04_dedupe_perf"),
+    ),
+]

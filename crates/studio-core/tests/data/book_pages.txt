@@ -99,3 +99,9 @@ ch21-00-final-project-a-web-server.html
 ch21-01-single-threaded.html
 ch21-02-multithreaded.html
 ch21-03-graceful-shutdown-and-cleanup.html
+appendix-00.html
+appendix-01-keywords.html
+appendix-02-operators.html
+appendix-03-derivable-traits.html
+appendix-04-useful-development-tools.html
+appendix-05-editions.html

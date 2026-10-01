@@ -1,0 +1,300 @@
+// Rust Codex, part 3: Concurrency → Performance. Entries unlock when their challenge is solved.
+[
+    (
+        id: "codex_concurrency_threads",
+        topic: "concurrency",
+        title: "Threads and move closures",
+        summary: "`thread::spawn` runs a closure on a new OS thread; `move` hands it ownership of what it uses.",
+        body: r##"`std::thread::spawn(closure)` starts a new OS thread and returns a `JoinHandle`. `handle.join()` waits for it and returns the closure's result (or `Err` if the thread panicked).
+
+The closure must be `'static`: the new thread may outlive the function that spawned it, so it cannot borrow local variables. Put `move` in front of the closure to transfer ownership of everything it uses (E0373 is the error you get if you forget). When you DO want to borrow local data, use `std::thread::scope`: scoped threads are guaranteed to finish before the scope ends."##,
+        example: r##"let name = String::from("grass.png");
+let handle = std::thread::spawn(move || name.to_uppercase());
+assert_eq!(handle.join().unwrap(), "GRASS.PNG");"##,
+        book_url: "https://doc.rust-lang.org/book/ch16-01-threads.html",
+        unlock_challenge: Some("concurrency_01_move_closure"),
+    ),
+    (
+        id: "codex_concurrency_shared_state",
+        topic: "concurrency",
+        title: "Shared state: Arc<Mutex<T>>",
+        summary: "`Arc` shares ownership between threads, `Mutex` makes mutation safe; `Send` and `Sync` are the compiler's proof.",
+        body: r##"To mutate data from several threads, wrap it in `Mutex<T>` and share the mutex with `Arc<Mutex<T>>`. `lock()` blocks until you hold the lock and returns a guard; the lock is released when the guard is dropped. Keep guards short-lived, and never hold one across a slow operation.
+
+Two marker traits make data races impossible in safe Rust: `Send` (a value may move to another thread) and `Sync` (a value may be shared between threads by reference). `Rc` and `RefCell` are not thread-safe, so the compiler refuses to send them to threads — use `Arc` and `Mutex`/`RwLock`/atomics instead."##,
+        example: r##"use std::sync::{Arc, Mutex};
+let counter = Arc::new(Mutex::new(0));
+let handles: Vec<_> = (0..4).map(|_| {
+    let counter = Arc::clone(&counter);
+    std::thread::spawn(move || *counter.lock().unwrap() += 1)
+}).collect();
+for h in handles { h.join().unwrap(); }
+assert_eq!(*counter.lock().unwrap(), 4);"##,
+        book_url: "https://doc.rust-lang.org/book/ch16-03-shared-state.html",
+        unlock_challenge: Some("concurrency_02_rc_to_arc"),
+    ),
+    (
+        id: "codex_concurrency_channels",
+        topic: "concurrency",
+        title: "Message passing with channels",
+        summary: "`mpsc::channel` moves values between threads — \"share memory by communicating\".",
+        body: r##"`std::sync::mpsc::channel()` returns a `(Sender, Receiver)` pair (multi-producer, single-consumer). Threads `send` values; the receiver `recv`s them (blocking) or iterates over them with `for v in rx`. Sending MOVES the value, so ownership guarantees nobody else touches it.
+
+Clone the `Sender` to give several threads a way to send. The channel is closed when every sender has been dropped — that is what ends the receiver's `for` loop. If a loop never ends, check that the main thread is not still holding a `Sender` of its own."##,
+        example: r##"use std::sync::mpsc;
+let (tx, rx) = mpsc::channel();
+std::thread::spawn(move || {
+    for i in 1..=3 { tx.send(i * 10).unwrap(); }
+});
+let got: Vec<i32> = rx.iter().collect();   // [10, 20, 30]"##,
+        book_url: "https://doc.rust-lang.org/book/ch16-02-message-passing.html",
+        unlock_challenge: Some("concurrency_04_predict_channel"),
+    ),
+    (
+        id: "codex_async_futures",
+        topic: "async",
+        title: "async fn and .await",
+        summary: "An `async fn` returns a future; nothing runs until something polls it, and `.await` is how you wait.",
+        body: r##"Calling an `async fn` does NOT run its body — it returns a value implementing `Future`, a description of work that has not happened yet. `.await` (allowed only inside async code) polls that future until it completes and gives you its output, letting other tasks run while it waits.
+
+That laziness is why forgetting `.await` leaves you with an unused future instead of a result, and why futures that are created but never polled do nothing at all. Async is great for programs that wait on I/O (networking, servers); for CPU-heavy work, threads are the right tool."##,
+        example: r##"async fn fetch_score(player: u32) -> u32 { player * 100 }
+
+async fn total(a: u32, b: u32) -> u32 {
+    fetch_score(a).await + fetch_score(b).await
+}"##,
+        book_url: "https://doc.rust-lang.org/book/ch17-01-futures-and-syntax.html",
+        unlock_challenge: Some("async_01_forgot_await"),
+    ),
+    (
+        id: "codex_async_poll",
+        topic: "async",
+        title: "Future::poll, Context and Waker",
+        summary: "A future is a state machine: `poll` returns `Ready(value)` or `Pending` plus a promise to wake the task.",
+        body: r##"The `Future` trait has one method: `fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output>`. An executor calls it; the future returns `Poll::Ready(value)` when finished or `Poll::Pending` when it cannot make progress yet.
+
+Before returning `Pending` a future must arrange for `cx.waker().wake()` to be called when something changes (data arrives, a timer fires) — otherwise the executor will never poll it again. `async` blocks are compiled into such state machines. `Pin` guarantees a future does not move in memory once polled, because async blocks may contain references to their own locals."##,
+        example: r##"fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<&'static str> {
+    if self.remaining == 0 { return Poll::Ready("liftoff"); }
+    self.remaining -= 1;
+    cx.waker().wake_by_ref();   // ask to be polled again
+    Poll::Pending
+}"##,
+        book_url: "https://doc.rust-lang.org/std/future/trait.Future.html",
+        unlock_challenge: Some("async_02_countdown_future"),
+    ),
+    (
+        id: "codex_async_executors",
+        topic: "async",
+        title: "Executors and runtimes",
+        summary: "An executor polls futures to completion; real runtimes (Tokio, async-std, smol) add I/O and timers.",
+        body: r##"The standard library defines futures but ships no executor. The simplest one is a loop that polls until `Ready` (our `block_on`). Real runtimes keep many tasks, and a reactor that talks to the operating system (epoll/kqueue/IOCP): a task that returns `Pending` is parked and polled again only after its waker fires.
+
+In practice you will pick a runtime crate and mark `main` with its attribute (`#[tokio::main]`). Concepts transfer between runtimes — futures, `.await`, wakers, spawning tasks, channels — even though their APIs differ. Never block a thread inside an async task (no `thread::sleep`, no heavy loops): that stalls every other task on the same thread."##,
+        example: r##"fn block_on<F: Future>(fut: F) -> F::Output {
+    let mut fut = std::pin::pin!(fut);
+    let mut cx = Context::from_waker(Waker::noop());
+    loop {
+        if let Poll::Ready(v) = fut.as_mut().poll(&mut cx) { return v; }
+    }
+}"##,
+        book_url: "https://rust-lang.github.io/async-book/02_execution/04_executor.html",
+        unlock_challenge: Some("async_03_block_on"),
+    ),
+    (
+        id: "codex_macros_basics",
+        topic: "macros",
+        title: "macro_rules! basics",
+        summary: "Macros match syntax patterns and expand to code — before type checking.",
+        body: r##"A declarative macro is a list of `(pattern) => { expansion }` rules. The compiler tries each pattern in order against the tokens you pass; the first that matches produces the code that replaces the call. Fragment specifiers say what a `$name:…` captures: `expr`, `ident`, `ty`, `tt` (any token tree), `pat`, `literal`, `block`, …
+
+Macros are expanded early, so they can do what functions cannot: accept a variable number of arguments, generate items (structs, impls), or build code from names. They are also textually scoped — define a macro above its first use. Reach for a macro only when a function or generic will not do; the error messages are worse."##,
+        example: r##"macro_rules! label {
+    ($value:expr, $unit:expr) => {
+        format!("{} {}", $value, $unit)
+    };
+}
+assert_eq!(label!(5, "HP"), "5 HP");"##,
+        book_url: "https://doc.rust-lang.org/book/ch20-05-macros.html",
+        unlock_challenge: Some("macros_01_define_before_use"),
+    ),
+    (
+        id: "codex_macros_repetition",
+        topic: "macros",
+        title: "Repetition and recursion in macros",
+        summary: "`$( … ),*` repeats a pattern; a macro may call itself to process lists.",
+        body: r##"Repetition has the form `$( pattern ) separator quantifier`: `*` means zero or more, `+` one or more, `?` zero or one. In the expansion the SAME repetition syntax emits the template once per match. `$(,)?` is the idiom for an optional trailing comma.
+
+Recursive macros peel one argument off per step: a base-case arm handles a single item and a recursive arm handles `$first, $($rest),+` by calling the macro again on `$($rest),+`. Bind arguments with `let` when you need to evaluate them once. Recursion depth is limited (128 by default) — for very long lists prefer repetition."##,
+        example: r##"macro_rules! strings {
+    ($($x:expr),* $(,)?) => { vec![$($x.to_string()),*] };
+}
+let v: Vec<String> = strings!["a", "b",];"##,
+        book_url: "https://doc.rust-lang.org/book/ch20-05-macros.html",
+        unlock_challenge: Some("macros_02_strings_macro"),
+    ),
+    (
+        id: "codex_macros_hygiene",
+        topic: "macros",
+        title: "Hygiene and procedural macros",
+        summary: "Macro-internal names cannot clash with yours — and derive/attribute macros are the other kind.",
+        body: r##"Declarative macros are HYGIENIC for local variables: a name the macro defines with `let` lives in its own scope and cannot capture or shadow a variable of the caller, and the macro body cannot see the caller's locals unless they are passed in as `$name:ident`. That is why `twice!(tmp + 1)` works even if the macro uses its own `tmp`.
+
+Procedural macros are the second family: functions that run at compile time on a token stream. `#[derive(Debug)]` and `#[derive(Serialize)]` are derive macros, `#[tokio::main]` is an attribute macro, `sqlx::query!` is function-like. They live in their own crate with `proc-macro = true`, usually with the `syn` and `quote` crates."##,
+        example: r##"macro_rules! bump {
+    ($counter:ident) => { $counter += 1; };   // caller's variable passed in
+}
+let mut count = 0;
+bump!(count);"##,
+        book_url: "https://veykril.github.io/tlborm/decl-macros/minutiae/hygiene.html",
+        unlock_challenge: Some("macros_05_review_hygiene"),
+    ),
+    (
+        id: "codex_ops_operators",
+        topic: "advanced_traits",
+        title: "Operator overloading with std::ops",
+        summary: "`+` is `Add`, `*` is `Mul`, unary `-` is `Neg`: implement the trait and your type gets the operator.",
+        body: r##"Every operator is a trait in `std::ops`: `Add`, `Sub`, `Mul`, `Div`, `Rem`, `Neg`, `Not`, `Index`, `AddAssign` (`+=`), `BitAnd`, … Implement the trait for your type and the operator works. The trait is generic over the right-hand side (`Mul<f32> for Vec2` scales by a number; `Mul<Vec2> for Vec2` would be a different impl) and has an `Output` associated type.
+
+Derive `Copy` for small math types so `a + b` does not move its operands. Keep operators meaningful: `+` should behave like addition. Comparison operators come from `PartialEq`/`PartialOrd` (derivable)."##,
+        example: r##"use std::ops::Add;
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Vec2 { x: f32, y: f32 }
+impl Add for Vec2 {
+    type Output = Vec2;
+    fn add(self, o: Vec2) -> Vec2 { Vec2 { x: self.x + o.x, y: self.y + o.y } }
+}"##,
+        book_url: "https://doc.rust-lang.org/book/ch20-02-advanced-traits.html",
+        unlock_challenge: Some("advanced_traits_01_vec2_operators"),
+    ),
+    (
+        id: "codex_ops_conversions",
+        topic: "advanced_traits",
+        title: "From, Into, TryFrom and AsRef",
+        summary: "The standard conversion traits make your types play nicely with generic code.",
+        body: r##"`impl From<A> for B` declares an infallible conversion; you get `B::from(a)` and `a.into()` for free (never implement `Into` yourself). `TryFrom<A>` is the fallible version: it returns `Result<B, Self::Error>` and powers `try_into()`. `FromStr` parses from text (`"3".parse::<i32>()`), `AsRef<T>` / `Borrow<T>` let functions accept several borrowed forms (`impl AsRef<str>` takes `&str` and `String`).
+
+Accepting `impl Into<String>` in a constructor lets callers pass `&str` or `String` without cloning. Error types that implement `From` for the errors beneath them work with the `?` operator."##,
+        example: r##"impl From<u32> for Rgb {
+    fn from(v: u32) -> Rgb {
+        Rgb { r: (v >> 16) as u8, g: (v >> 8) as u8, b: v as u8 }
+    }
+}
+let c: Rgb = 0xFF8000.into();"##,
+        book_url: "https://doc.rust-lang.org/std/convert/trait.From.html",
+        unlock_challenge: Some("advanced_traits_02_color_conversions"),
+    ),
+    (
+        id: "codex_ops_display_derive",
+        topic: "advanced_traits",
+        title: "Display, Debug and derivable traits",
+        summary: "`{}` is `Display` (you write it), `{:?}` is `Debug` (you usually derive it).",
+        body: r##"`Debug` (`{:?}`, `{:#?}`) is for programmers: derive it with `#[derive(Debug)]`. `Display` (`{}`) is for users: implement it by hand with `write!(f, …)`; you then get `.to_string()` from the blanket `ToString` impl. Do not write your own `to_string` method.
+
+Other derivable traits: `Clone`, `Copy`, `PartialEq`/`Eq`, `PartialOrd`/`Ord` (enum variants compare in declaration order, then fields lexicographically), `Hash` (needed for `HashMap` keys) and `Default`. Derive what you need — each one is a promise your type keeps."##,
+        example: r##"use std::fmt;
+struct Item { name: String, quantity: u32 }
+impl fmt::Display for Item {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} x{}", self.name, self.quantity)
+    }
+}"##,
+        book_url: "https://doc.rust-lang.org/rust-by-example/hello/print/print_display.html",
+        unlock_challenge: Some("advanced_traits_03_display_refactor"),
+    ),
+    (
+        id: "codex_unsafe_superpowers",
+        topic: "unsafe",
+        title: "The five unsafe superpowers",
+        summary: "`unsafe` unlocks five operations and shifts the proof obligation from the compiler to you.",
+        body: r##"Inside an `unsafe` block (or `unsafe fn`) you may: (1) dereference a raw pointer, (2) call an unsafe function or method, (3) access or modify a mutable static variable, (4) implement an unsafe trait, (5) access fields of a union. Everything else — including the borrow checker — still applies.
+
+Unsafe code must uphold the same guarantees safe code does: no dangling or unaligned pointers, no aliasing `&mut`, no data races, no invalid values. Keep each `unsafe` block as small as possible and put a `// SAFETY:` comment above it that says why the conditions hold. Run risky code under Miri (`cargo +nightly miri test`) to catch undefined behaviour."##,
+        example: r##"let mut score = 5;
+let ptr = &mut score as *mut i32;       // creating a raw pointer is safe
+// SAFETY: `ptr` comes from a live exclusive reference.
+unsafe { *ptr = 0; }"##,
+        book_url: "https://doc.rust-lang.org/book/ch20-01-unsafe-rust.html",
+        unlock_challenge: Some("unsafe_01_raw_pointer_write"),
+    ),
+    (
+        id: "codex_unsafe_abstractions",
+        topic: "unsafe",
+        title: "Safe abstractions over unsafe code",
+        summary: "Wrap `unsafe` in an API that no caller can misuse — that is how the standard library works.",
+        body: r##"Most unsafe code in the wild is hidden behind a SAFE function that checks its preconditions: `slice::split_at_mut`, `Vec`, `Rc`, `Mutex`. The function either validates its input (`assert!(mid <= len)`) or makes the invariant impossible to break through private fields and constructors.
+
+If a function can cause undefined behaviour for inputs that safe callers are able to pass, it is UNSOUND — even if no bug has bitten yet. Either add the check, or mark the function `unsafe fn` and document the contract in a `# Safety` section so callers must write `unsafe` themselves."##,
+        example: r##"pub fn split_two(v: &mut [i32], mid: usize) -> (&mut [i32], &mut [i32]) {
+    let len = v.len();
+    let ptr = v.as_mut_ptr();
+    assert!(mid <= len);
+    // SAFETY: both ranges are inside `v` and do not overlap.
+    unsafe {
+        (std::slice::from_raw_parts_mut(ptr, mid),
+         std::slice::from_raw_parts_mut(ptr.add(mid), len - mid))
+    }
+}"##,
+        book_url: "https://doc.rust-lang.org/book/ch20-01-unsafe-rust.html",
+        unlock_challenge: Some("unsafe_02_split_at_mut"),
+    ),
+    (
+        id: "codex_unsafe_ffi",
+        topic: "unsafe",
+        title: "FFI: talking to C",
+        summary: "`extern \"C\"` declares foreign functions; `CString`/`CStr` and `#[repr(C)]` bridge the data.",
+        body: r##"An `extern "C" { fn strlen(s: *const c_char) -> usize; }` block declares a function implemented in another language (linked from the C runtime or a library). Calling it is `unsafe`: the compiler cannot check what C does with your pointers.
+
+Bridge the data types carefully. Rust strings are not NUL-terminated and may contain NULs, so use `CString` (owned) and `CStr` (borrowed). Structs that cross the boundary need `#[repr(C)]` so the fields are laid out like C's. To expose Rust to C, write `#[no_mangle] pub extern "C" fn …`. Tools like `bindgen` and `cbindgen` generate the declarations for you."##,
+        example: r##"use std::ffi::{c_char, CString};
+extern "C" { fn strlen(s: *const c_char) -> usize; }
+
+let text = CString::new("hello").unwrap();
+// SAFETY: valid NUL-terminated string that outlives the call.
+let n = unsafe { strlen(text.as_ptr()) };"##,
+        book_url: "https://doc.rust-lang.org/book/ch20-01-unsafe-rust.html",
+        unlock_challenge: Some("unsafe_03_ffi_strlen"),
+    ),
+    (
+        id: "codex_performance_measure",
+        topic: "performance",
+        title: "Measure first, then optimise",
+        summary: "Build with `--release`, profile, and fix the algorithm before touching micro-details.",
+        body: r##"Debug builds are slow on purpose — always benchmark with `cargo build --release`. Measure before changing anything: a profiler (`perf`, `cargo flamegraph`, Instruments) or a benchmark harness (`criterion`, `divan`) shows where the time really goes; intuition is usually wrong.
+
+Then work from the top: a better algorithm or data structure beats everything else (O(n²) → O(n) dwarfs any micro-optimisation), then remove allocations and copies in hot loops, and only last tune details such as inlining or SIMD. Rust's zero-cost abstractions mean iterator chains and generics normally need no hand-tuning."##,
+        example: r##"// quadratic: formats the whole string again on every iteration
+out = format!("{}{}\n", out, line);
+// linear: appends in place into a pre-sized buffer
+out.push_str(line); out.push('\n');"##,
+        book_url: "https://nnethercote.github.io/perf-book/",
+        unlock_challenge: Some("performance_01_string_building"),
+    ),
+    (
+        id: "codex_performance_algorithms",
+        topic: "performance",
+        title: "Complexity and the right data structure",
+        summary: "Precompute once, query many times; use the collection whose operations match your access pattern.",
+        body: r##"Big-O describes how work grows with input size. Typical traps in Rust code: `Vec::contains` or `remove(0)` inside a loop (O(n²)), repeated `format!`/`+` concatenation of ever-growing strings, sorting inside a loop, and re-computing the same sum over and over.
+
+Cures: `HashSet`/`HashMap` for membership and lookup, `VecDeque` for FIFO queues, `BinaryHeap` for priorities, prefix sums and other precomputed tables for repeated range queries, `sort` + `binary_search` for lookups in static data. Choosing the structure that makes your hot operation O(1) or O(log n) is the single biggest win."##,
+        example: r##"// prefix[i] = sum of the first i values  →  any range sum in O(1)
+let sum = prefix[to + 1] - prefix[from];"##,
+        book_url: "https://doc.rust-lang.org/std/collections/index.html#when-should-you-use-which-collection",
+        unlock_challenge: Some("performance_02_prefix_sums"),
+    ),
+    (
+        id: "codex_performance_alloc",
+        topic: "performance",
+        title: "Fewer allocations, fewer passes",
+        summary: "Reserve capacity, avoid temporary collections and let iterators fuse into one loop.",
+        body: r##"Heap allocation is expensive compared with arithmetic. Reduce it: reuse buffers, call `Vec::with_capacity` / `String::with_capacity` when you know the size, borrow (`&str`, `&[T]`) instead of cloning, and avoid collecting into a temporary `Vec` just to iterate it again.
+
+Iterator adapters are lazy and fuse into a single loop, so keep the chain going until a consumer (`sum`, `count`, `fold`, `max`, `any`) produces the final value. Use `collect` only when you actually need the elements afterwards. For many small strings, `Cow<str>` and `SmallVec`-style crates can avoid allocations in the common case."##,
+        example: r##"let (total, count) = hits.iter()
+    .filter(|h| **h >= 10)
+    .fold((0u64, 0u64), |(t, c), h| (t + *h as u64, c + 1));"##,
+        book_url: "https://doc.rust-lang.org/book/ch13-04-performance.html",
+        unlock_challenge: Some("performance_04_single_pass"),
+    ),
+]
