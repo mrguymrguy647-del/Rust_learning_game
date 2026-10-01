@@ -121,5 +121,5 @@ Settings: difficulty (economy only), hint-cost multiplier, sandbox timeout, edit
 - [x] M3 Core tycoon loop (projects, phases, blockers, quality, reviews, sales, bankruptcy, Projects/Library/Dashboard UI)
 - [x] M4 Engine, staff, studio (21-module research tree, hiring/training/morale/seniors, tier upgrades, loans)
 - [x] M5 Market, events, post-launch (trends, platform lifecycles, rivals, awards, 27 data-driven events incl. hotfix/jam challenges, contracts, marketing, patches/DLC/sequels, licensing)
-- [ ] M6 Full curriculum + Codex
+- [x] M6 Full curriculum + Codex (92 challenges across all 19 topics and all 8 kinds, every one verified against the real compiler; 57 Codex entries + Codex screen; quiz answers verified by running or compiling the snippets)
 - [ ] M7 Tutorial, balance, polish

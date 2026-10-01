@@ -395,10 +395,10 @@ fn left_pane(app: &mut App, view: &mut ChallengeView, ui: &mut egui::Ui) -> Opti
     let mut action = None;
 
     ui.label(RichText::new("THE SITUATION").small().color(pal.dim));
-    ui.label(RichText::new(&view.challenge.story).italics());
+    widgets::markup_styled(ui, &view.challenge.story, true, None);
     ui.add_space(10.0);
     ui.label(RichText::new("YOUR TASK").small().color(pal.dim));
-    ui.label(&view.challenge.task);
+    widgets::markup(ui, &view.challenge.task);
 
     if !view.challenge.signatures.is_empty() {
         ui.add_space(8.0);
@@ -423,10 +423,12 @@ fn left_pane(app: &mut App, view: &mut ChallengeView, ui: &mut egui::Ui) -> Opti
     for (i, text) in view.hint_texts.iter().enumerate() {
         widgets::card(ui, |ui| {
             ui.label(RichText::new(format!("Hint {}", i + 1)).strong().color(pal.accent));
-            if text.contains('\n') || text.contains("fn ") || text.contains(';') && text.contains("let ") {
+            let looks_like_code =
+                text.contains('\n') || text.contains("fn ") || text.contains(';') && text.contains("let ");
+            if looks_like_code && !(text.contains('`') && !text.contains('\n')) {
                 ui.label(RichText::new(text).monospace());
             } else {
-                ui.label(text);
+                widgets::markup(ui, text);
             }
         });
     }
@@ -746,8 +748,8 @@ fn diagnostic_card(app: &App, d: &studio_core::challenges::Diagnostic, ui: &mut 
                                 .strong()
                                 .color(pal.info),
                         );
-                        ui.label(&ex.explanation);
-                        ui.label(RichText::new(format!("How to fix it: {}", ex.how_to_fix)).italics());
+                        widgets::markup(ui, &ex.explanation);
+                        widgets::markup_styled(ui, &format!("How to fix it: {}", ex.how_to_fix), true, None);
                         if !ex.book_url.is_empty() {
                             ui.hyperlink_to("Read more in the Rust Book", &ex.book_url);
                         }
@@ -938,7 +940,7 @@ fn solved_pane(app: &App, view: &ChallengeView, r: &RewardSummary, ui: &mut egui
         }
         ui.add_space(10.0);
         widgets::section(ui, "What you learned");
-        ui.label(&view.challenge.explanation);
+        widgets::markup(ui, &view.challenge.explanation);
         if !view.challenge.solution.is_empty() && !view.challenge.is_quiz() {
             ui.add_space(8.0);
             widgets::section(

@@ -123,6 +123,33 @@ fn challenges_form_a_solvable_prerequisite_chain() {
 }
 
 #[test]
+fn inline_code_spans_are_balanced() {
+    // The UI renders `backtick spans` as inline code; an odd number would flip the rest of the text.
+    let lib = ContentLibrary::embedded();
+    let check = |owner: &str, field: &str, text: &str| {
+        assert_eq!(text.matches('`').count() % 2, 0, "{owner}: unbalanced backticks in {field}");
+    };
+    for c in &lib.challenges {
+        check(&c.id, "story", &c.story);
+        check(&c.id, "task", &c.task);
+        check(&c.id, "explanation", &c.explanation);
+        for h in c.hints.iter().filter(|h| !h.contains('\n')) {
+            check(&c.id, "hint", h);
+        }
+    }
+    for e in &lib.codex {
+        check(&e.id, "summary", &e.summary);
+        for paragraph in e.body.split("\n\n") {
+            check(&e.id, "body paragraph", paragraph);
+        }
+    }
+    for e in &lib.error_explainers {
+        check(&e.id, "explanation", &e.explanation);
+        check(&e.id, "how_to_fix", &e.how_to_fix);
+    }
+}
+
+#[test]
 fn links_point_at_real_pages() {
     let book = lines(include_str!("data/book_pages.txt"));
     let rbe = lines(include_str!("data/rbe_pages.txt"));

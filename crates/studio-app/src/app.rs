@@ -141,6 +141,9 @@ pub struct App {
     pub toolchain: ToolchainStatus,
     pub challenge: Option<ChallengeView>,
     pub practice_filter: Option<ChallengeKind>,
+    /// Codex entry shown in the reading pane, and the search box text.
+    pub codex_selected: Option<String>,
+    pub codex_search: String,
     /// The "new project" form (created lazily).
     pub project_form: Option<crate::screens::projects::ProjectForm>,
     /// Index into `game.games` of the release whose reviews are shown.
@@ -185,6 +188,8 @@ impl App {
             toolchain: ToolchainStatus::Detecting,
             challenge: None,
             practice_filter: None,
+            codex_selected: None,
+            codex_search: String::new(),
             project_form: None,
             review_popup: None,
             confirm_cancel_project: false,
@@ -337,6 +342,13 @@ impl App {
                 }
                 if flag == "rich" {
                     self.dev_enrich();
+                }
+                if self.nav == Nav::Codex {
+                    self.codex_selected = self
+                        .game
+                        .as_ref()
+                        .and_then(|g| self.content.codex.iter().find(|e| g.progress.codex_unlocked(e)))
+                        .map(|e| e.id.clone());
                 }
             }
             // `sim:<Nav>:<weeks>[:release]` — play a puzzle project for N weeks with auto-solved blockers.
@@ -666,9 +678,9 @@ impl App {
                 Nav::Market => crate::screens::market::show(self, ui),
                 Nav::Library => crate::screens::library::show(self, ui),
                 Nav::Skills => crate::screens::skills::show(self, ui),
+                Nav::Codex => crate::screens::codex::show(self, ui),
                 Nav::Practice => crate::screens::practice::show(self, ui),
                 Nav::Settings => crate::screens::settings::show(self, ui),
-                other => crate::screens::placeholder::show(self, ui, other),
             });
         });
 
@@ -728,12 +740,18 @@ impl App {
     fn nav_bar(&mut self, ui: &mut egui::Ui) {
         let pal = Palette::of(ui);
         ui.add_space(4.0);
+        let fresh_codex = self.game.as_ref().map_or(0, |g| g.progress.codex_new_count(&self.content.codex));
         for nav in Nav::ALL {
             let selected = self.nav == nav;
-            let text = if selected {
-                RichText::new(nav.label()).strong().color(pal.accent_text)
+            let label = if nav == Nav::Codex && fresh_codex > 0 {
+                format!("{}  ({fresh_codex} new)", nav.label())
             } else {
-                RichText::new(nav.label())
+                nav.label().to_string()
+            };
+            let text = if selected {
+                RichText::new(label).strong().color(pal.accent_text)
+            } else {
+                RichText::new(label)
             };
             let button = egui::Button::new(text)
                 .fill(if selected { pal.accent } else { egui::Color32::TRANSPARENT })
@@ -918,6 +936,40 @@ mod tests {
             run_frames(&mut app, 2);
             app.challenge = None;
         }
+        let _ = std::fs::remove_dir_all(app.paths.root());
+    }
+
+    #[test]
+    fn codex_entries_unlock_with_challenges_and_can_all_be_displayed() {
+        let mut app = test_app("codex");
+        app.new_game.studio = "Codex Studio".into();
+        app.start_new_game();
+        app.nav = Nav::Codex;
+        let content = app.content.clone();
+
+        // Only entries without an unlock challenge are open at the start.
+        let open_at_start = content.codex.iter().filter(|e| e.unlock_challenge.is_none()).count();
+        let game = app.game.as_ref().expect("game started");
+        assert_eq!(game.progress.codex_new_count(&content.codex), open_at_start);
+        assert!(open_at_start < content.codex.len());
+
+        // Every entry (locked and unlocked) must render.
+        for e in &content.codex {
+            app.codex_selected = Some(e.id.clone());
+            run_frames(&mut app, 2);
+        }
+        app.codex_search = "ownership".into();
+        run_frames(&mut app, 2);
+
+        // Solving the unlocking challenge opens the entry and it becomes "new".
+        let entry = content.codex.iter().find(|e| e.unlock_challenge.is_some()).expect("gated entry");
+        let challenge = entry.unlock_challenge.clone().expect("gated entry has a challenge");
+        let game = app.game.as_mut().expect("game started");
+        game.progress.solved.insert(challenge, studio_core::sim::SolveRecord::default());
+        assert!(game.progress.codex_unlocked(entry));
+        let before = game.progress.codex_new_count(&content.codex);
+        game.progress.mark_codex_seen(&entry.id);
+        assert_eq!(game.progress.codex_new_count(&content.codex), before - 1);
         let _ = std::fs::remove_dir_all(app.paths.root());
     }
 

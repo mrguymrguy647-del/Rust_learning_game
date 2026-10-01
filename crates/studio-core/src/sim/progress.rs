@@ -174,6 +174,17 @@ impl PlayerProgress {
         }
     }
 
+    /// Unlocked entries the player has not opened yet.
+    pub fn codex_new_count(&self, codex: &[CodexEntry]) -> usize {
+        codex.iter().filter(|e| self.codex_unlocked(e) && !self.codex_seen.contains(&e.id)).count()
+    }
+
+    pub fn mark_codex_seen(&mut self, id: &str) {
+        if !self.codex_seen.contains(id) {
+            self.codex_seen.insert(id.to_string());
+        }
+    }
+
     /// Unlock newly satisfied achievements, award their XP and return them.
     pub fn check_achievements<'a>(&mut self, defs: &'a [AchievementDef]) -> Vec<&'a AchievementDef> {
         let mut unlocked = Vec::new();

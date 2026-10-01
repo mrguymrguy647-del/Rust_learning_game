@@ -22,6 +22,38 @@ pub fn section(ui: &mut Ui, title: &str) {
     ui.separator();
 }
 
+/// Body text where `backtick spans` are drawn as inline code (monospace on a tinted background).
+pub fn markup(ui: &mut Ui, text: &str) -> egui::Response {
+    markup_styled(ui, text, false, None)
+}
+
+/// Like [`markup`], with the prose optionally italic and/or in a custom colour.
+pub fn markup_styled(ui: &mut Ui, text: &str, italics: bool, color: Option<Color32>) -> egui::Response {
+    let pal = Palette::of(ui);
+    let body = egui::TextStyle::Body.resolve(ui.style());
+    let mono = egui::FontId::monospace(body.size * 0.95);
+    let mut job = egui::text::LayoutJob::default();
+    job.wrap.max_width = ui.available_width();
+    for (i, part) in text.split('`').enumerate() {
+        if part.is_empty() {
+            continue;
+        }
+        let code = i % 2 == 1;
+        job.append(
+            part,
+            0.0,
+            egui::TextFormat {
+                font_id: if code { mono.clone() } else { body.clone() },
+                color: if code { pal.accent } else { color.unwrap_or(pal.text) },
+                background: if code { pal.code_bg } else { Color32::TRANSPARENT },
+                italics: italics && !code,
+                ..Default::default()
+            },
+        );
+    }
+    ui.label(job)
+}
+
 pub fn dim(ui: &mut Ui, text: impl Into<String>) {
     let pal = Palette::of(ui);
     ui.label(RichText::new(text.into()).color(pal.dim));

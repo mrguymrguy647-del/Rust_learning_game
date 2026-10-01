@@ -144,7 +144,11 @@ impl Runner {
         let config = self.config();
         let dir = self.sandbox.snippet_dir();
         if let Err(e) = std::fs::create_dir_all(&dir) {
-            return SnippetResult { compiled: false, stdout: String::new(), diagnostics: format!("cannot create {}: {e}", dir.display()) };
+            return SnippetResult {
+                compiled: false,
+                stdout: String::new(),
+                diagnostics: format!("cannot create {}: {e}", dir.display()),
+            };
         }
         let src = dir.join("snippet.rs");
         let exe = dir.join(if cfg!(windows) { "snippet.exe" } else { "snippet" });
@@ -154,17 +158,25 @@ impl Runner {
         let _ = std::fs::remove_file(&exe);
         let rustc = self.toolchain.rustc_path();
         let mut cmd = self.command(rustc);
-        cmd.args(["--edition", "2021", "--color", "never", "-A", "warnings", "-o"]).arg(&exe).arg(&src).current_dir(&dir);
+        cmd.args(["--edition", "2021", "--color", "never", "-A", "warnings", "-o"])
+            .arg(&exe)
+            .arg(&src)
+            .current_dir(&dir);
         let never = AtomicBool::new(false);
         let compiled = run_limited(cmd, &Limits::new(config.compile_timeout, config.output_limit), &never);
         if !compiled.success() {
-            return SnippetResult { compiled: false, stdout: String::new(), diagnostics: format!("{}{}", compiled.stdout, compiled.stderr) };
+            return SnippetResult {
+                compiled: false,
+                stdout: String::new(),
+                diagnostics: format!("{}{}", compiled.stdout, compiled.stderr),
+            };
         }
         if !run {
             return SnippetResult { compiled: true, stdout: String::new(), diagnostics: String::new() };
         }
         let run_cmd = self.command(&exe);
-        let ran = run_limited(run_cmd, &Limits::for_player_code(config.test_timeout, config.output_limit), &never);
+        let ran =
+            run_limited(run_cmd, &Limits::for_player_code(config.test_timeout, config.output_limit), &never);
         SnippetResult { compiled: true, stdout: ran.stdout, diagnostics: ran.stderr }
     }
 

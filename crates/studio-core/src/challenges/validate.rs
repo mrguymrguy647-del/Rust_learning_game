@@ -96,7 +96,8 @@ fn verdict_name(v: &Verdict) -> &'static str {
 fn verify_quiz(runner: &Runner, c: &Challenge, q: &crate::data::Quiz, v: &mut Validation) {
     use crate::data::QuizVerify;
     let wrap = |option: &str| {
-        let template = if q.wrapper.trim().is_empty() { "fn main() {\n{CODE}\n}\n" } else { q.wrapper.as_str() };
+        let template =
+            if q.wrapper.trim().is_empty() { "fn main() {\n{CODE}\n}\n" } else { q.wrapper.as_str() };
         template.replace("{CODE}", option)
     };
     match q.verify {
@@ -109,7 +110,8 @@ fn verify_quiz(runner: &Runner, c: &Challenge, q: &crate::data::Quiz, v: &mut Va
             }
             let got = result.stdout.trim().replace("\r\n", "\n");
             if got != c.solution.trim() {
-                v.problems.push(format!("the program prints:\n{got}\nbut `solution` says:\n{}", c.solution.trim()));
+                v.problems
+                    .push(format!("the program prints:\n{got}\nbut `solution` says:\n{}", c.solution.trim()));
             }
             if q.options[q.correct].trim() != c.solution.trim() {
                 v.problems.push("the correct option text must equal `solution`".into());
