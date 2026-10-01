@@ -169,4 +169,99 @@ pub fn truncate_dialogue(line: &str, max_chars: usize) -> String {
         prerequisites: ["borrowing_02_mut_borrow_conflict"],
         engine_tags: ["dialogue"],
     ),
+    (
+        id: "borrowing_04_split_dialogue",
+        topic: "borrowing",
+        kind: Complete,
+        difficulty: 2,
+        title: "Who Is Speaking?",
+        story: "Scripted dialogue arrives as lines like \"Gandalf: You shall not pass!\". The speech bubble needs the speaker and the text separately — again without copying, since the script file is huge.",
+        task: "Complete `split_speaker`. It returns `Some((speaker, text))` where both parts are trimmed slices of the line, split at the FIRST colon. If the line contains no colon, return `None`.",
+        signatures: ["pub fn split_speaker(line: &str) -> Option<(&str, &str)>"],
+        starter_code: r##"pub fn split_speaker(line: &str) -> Option<(&str, &str)> {
+    // TODO: split at the first ':' and trim both halves
+    todo!()
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn splits_speaker_from_text() {
+    assert_eq!(split_speaker("Gandalf: You shall not pass!"), Some(("Gandalf", "You shall not pass!")));
+}
+
+#[test]
+fn only_the_first_colon_counts() {
+    assert_eq!(split_speaker("Narrator: Time: 12:00"), Some(("Narrator", "Time: 12:00")));
+}
+
+#[test]
+fn whitespace_is_trimmed() {
+    assert_eq!(split_speaker("  Zelda  :   Hyah!  "), Some(("Zelda", "Hyah!")));
+    assert_eq!(split_speaker("Ghost:"), Some(("Ghost", "")));
+}
+
+#[test]
+fn lines_without_a_colon_have_no_speaker() {
+    assert_eq!(split_speaker("The wind howls."), None);
+    assert_eq!(split_speaker(""), None);
+}
+"##,
+        hints: [
+            "`str` has a method that splits a string into two at the first occurrence of a pattern and returns an `Option` of the two halves.",
+            "Look at `str::split_once(':')`. It returns `Option<(&str, &str)>` — exactly the shape you need, except for the trimming.",
+            "pub fn split_speaker(line: &str) -> Option<(&str, &str)> {\n    line.split_once(':')\n        // trim both halves of the pair with `.map(|(a, b)| …)`\n}",
+        ],
+        solution: r##"pub fn split_speaker(line: &str) -> Option<(&str, &str)> {
+    line.split_once(':').map(|(speaker, text)| (speaker.trim(), text.trim()))
+}
+"##,
+        explanation: "`split_once` returns slices into the original string, so nothing is allocated, and the compiler ties the lifetime of the result to `line` (elision again). Returning an `Option` makes the \"no colon\" case impossible to forget — the caller must handle `None`.",
+        book_links: [
+            (title: "The Rust Book: String Slices", url: "https://doc.rust-lang.org/book/ch04-03-slices.html"),
+            (title: "Rust by Example: Option", url: "https://doc.rust-lang.org/rust-by-example/std/option.html"),
+        ],
+        prerequisites: ["borrowing_03_truncate_dialogue"],
+        engine_tags: ["dialogue"],
+    ),
+    (
+        id: "borrowing_05_review_dangling",
+        topic: "borrowing",
+        kind: CodeReview,
+        difficulty: 3,
+        title: "Review: Dangling References",
+        story: "A pull request adds four helper functions that return references. The reviewer's checklist has one question: which of them are safe to merge? Only one of them compiles; the others would return references to data that no longer exists.",
+        task: "Which function compiles?",
+        explanation: "A function can only return a reference that points at data owned by someone else who outlives the call — here the argument `v`. `make`, `pick` and `name` all fail: the first two have no way to tell which input a returned reference belongs to (E0106), and the last returns a reference to a local `String` that is dropped when the function returns (E0515). Return an owned `String` instead.",
+        solution: "Option A: `first` borrows from its only argument, so the returned reference can never dangle.",
+        book_links: [
+            (title: "The Rust Book: Dangling References", url: "https://doc.rust-lang.org/book/ch10-03-lifetime-syntax.html"),
+            (title: "The Rust Book: References and Borrowing", url: "https://doc.rust-lang.org/book/ch04-02-references-and-borrowing.html"),
+        ],
+        prerequisites: ["borrowing_04_split_dialogue"],
+        engine_tags: ["dialogue"],
+        quiz: Some((
+            question: "Which function compiles?",
+            code: "",
+            options_are_code: true,
+            options: [
+                r##"fn first(v: &Vec<String>) -> &String {
+    &v[0]
+}"##,
+                r##"fn make() -> &String {
+    let s = String::from("hero");
+    &s
+}"##,
+                r##"fn pick(a: &str, b: &str) -> &str {
+    if a.len() > b.len() { a } else { b }
+}"##,
+                r##"fn name() -> &'static str {
+    let s = String::from("hero");
+    &s
+}"##,
+            ],
+            correct: 0,
+            verify: OnlyCorrectCompiles,
+            wrapper: "#![allow(dead_code)]\n{CODE}\nfn main() {}\n",
+        )),
+    ),
 ]

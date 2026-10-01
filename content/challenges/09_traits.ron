@@ -1,0 +1,381 @@
+// Topic 9: Traits & Generics — "Component system & renderers"
+[
+    (
+        id: "traits_01_renderable",
+        topic: "traits",
+        kind: Complete,
+        difficulty: 2,
+        title: "One Trait, Many Renderers",
+        story: "The renderer draws everything on screen through a single `Renderable` trait: walls, torches, anything. Most objects draw themselves the same way (a glyph repeated across their width), so the trait should supply that behaviour once, as a default method.",
+        task: "Implement `render` as a default method (the glyph repeated `width()` times), then implement `Renderable` for `Wall` (glyph `#`, width = its length) and `Torch` (glyph `*`, width 1).",
+        signatures: [
+            "pub trait Renderable { fn glyph(&self) -> char; fn width(&self) -> usize; fn render(&self) -> String }",
+            "impl Renderable for Wall",
+            "impl Renderable for Torch",
+        ],
+        starter_code: r##"pub trait Renderable {
+    fn glyph(&self) -> char;
+    fn width(&self) -> usize;
+
+    /// Default behaviour: the glyph repeated `width()` times.
+    fn render(&self) -> String {
+        todo!()
+    }
+}
+
+pub struct Wall {
+    pub length: usize,
+}
+
+pub struct Torch;
+
+impl Renderable for Wall {
+    fn glyph(&self) -> char {
+        todo!()
+    }
+    fn width(&self) -> usize {
+        todo!()
+    }
+}
+
+impl Renderable for Torch {
+    fn glyph(&self) -> char {
+        todo!()
+    }
+    fn width(&self) -> usize {
+        todo!()
+    }
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn walls_and_torches_render() {
+    assert_eq!(Wall { length: 4 }.render(), "#".repeat(4));
+    assert_eq!(Wall { length: 0 }.render(), "");
+    assert_eq!(Torch.render(), "*");
+}
+
+#[test]
+fn default_render_works_for_new_types() {
+    struct Banner;
+    impl Renderable for Banner {
+        fn glyph(&self) -> char {
+            '~'
+        }
+        fn width(&self) -> usize {
+            3
+        }
+    }
+    assert_eq!(Banner.render(), "~~~");
+}
+
+#[test]
+fn types_can_override_the_default() {
+    struct Fancy;
+    impl Renderable for Fancy {
+        fn glyph(&self) -> char {
+            '?'
+        }
+        fn width(&self) -> usize {
+            9
+        }
+        fn render(&self) -> String {
+            String::from("custom")
+        }
+    }
+    assert_eq!(Fancy.render(), "custom");
+}
+
+#[test]
+fn works_through_a_generic_function() {
+    fn draw<R: Renderable>(item: &R) -> usize {
+        item.render().len()
+    }
+    assert_eq!(draw(&Wall { length: 7 }), 7);
+}
+"##,
+        hints: [
+            "A default method is an ordinary method body inside the `trait` block. It may call other methods of the trait through `self` — here `self.glyph()` and `self.width()`.",
+            "Turn the `char` into a `String` first (`self.glyph().to_string()`), then repeat it with `str::repeat(n)`.",
+            "fn render(&self) -> String {\n    self.glyph().to_string().repeat(self.width())\n}\n\n// Wall: glyph '#', width self.length.  Torch: glyph '*', width 1.",
+        ],
+        solution: r##"pub trait Renderable {
+    fn glyph(&self) -> char;
+    fn width(&self) -> usize;
+
+    /// Default behaviour: the glyph repeated `width()` times.
+    fn render(&self) -> String {
+        self.glyph().to_string().repeat(self.width())
+    }
+}
+
+pub struct Wall {
+    pub length: usize,
+}
+
+pub struct Torch;
+
+impl Renderable for Wall {
+    fn glyph(&self) -> char {
+        '#'
+    }
+    fn width(&self) -> usize {
+        self.length
+    }
+}
+
+impl Renderable for Torch {
+    fn glyph(&self) -> char {
+        '*'
+    }
+    fn width(&self) -> usize {
+        1
+    }
+}
+"##,
+        explanation: "A trait describes shared behaviour. Required methods (`glyph`, `width`) must be written by every implementor; a default method (`render`) is written once in the trait and inherited for free — but any type may still override it. Because `render` is defined in terms of the other trait methods, every new type that implements `Renderable` gets drawing for just two tiny functions.",
+        book_links: [
+            (title: "The Rust Book: Traits — Defining Shared Behavior", url: "https://doc.rust-lang.org/book/ch10-02-traits.html"),
+            (title: "Rust by Example: Traits", url: "https://doc.rust-lang.org/rust-by-example/trait.html"),
+        ],
+        prerequisites: [],
+        engine_tags: ["rendering", "components"],
+    ),
+    (
+        id: "traits_02_generic_strongest",
+        topic: "traits",
+        kind: FixCompile,
+        difficulty: 2,
+        title: "Who Is Strongest?",
+        story: "The AI picks the strongest unit from a squad. It should work for any unit type — integers, floats, even custom structs — so the author made it generic. The compiler has other opinions.",
+        task: "Fix the compile error so `strongest` works for every type that can be ordered. Do not remove the generic parameter.",
+        signatures: ["pub fn strongest<T>(units: &[T]) -> Option<&T>"],
+        starter_code: r##"pub fn strongest<T>(units: &[T]) -> Option<&T> {
+    let mut best = units.first()?;
+    for unit in units {
+        if unit > best {
+            best = unit;
+        }
+    }
+    Some(best)
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn works_for_integers() {
+    assert_eq!(strongest(&[3, 9, 2]), Some(&9));
+    assert_eq!(strongest::<i32>(&[]), None);
+}
+
+#[test]
+fn works_for_floats_and_strs() {
+    assert_eq!(strongest(&[1.5, 0.2, 1.4]), Some(&1.5));
+    assert_eq!(strongest(&["apple", "pear", "fig"]), Some(&"pear"));
+}
+
+#[test]
+fn works_for_custom_types() {
+    #[derive(Debug, PartialEq, PartialOrd)]
+    struct Power(u32);
+    let squad = [Power(4), Power(10), Power(7)];
+    assert_eq!(strongest(&squad), Some(&Power(10)));
+}
+"##,
+        hints: [
+            "Inside a generic function the compiler knows NOTHING about `T`. It cannot assume `T` supports `>`. Read the error: it tells you which trait is missing.",
+            "Add a trait bound to the type parameter: `T: SomeTrait`. The `>` operator comes from the `PartialOrd` trait.",
+            "pub fn strongest<T: PartialOrd>(units: &[T]) -> Option<&T> {\n    // body unchanged\n}",
+        ],
+        solution: r##"pub fn strongest<T: PartialOrd>(units: &[T]) -> Option<&T> {
+    let mut best = units.first()?;
+    for unit in units {
+        if unit > best {
+            best = unit;
+        }
+    }
+    Some(best)
+}
+"##,
+        explanation: "Generics are checked once, at the definition, against the bounds you declare — not separately for every type you later use. `T` by itself can do nothing, so `unit > best` is rejected (E0369) until you promise `T: PartialOrd`. Trait bounds are those promises: they tell callers what is required, and tell the compiler what the body may rely on. We used `PartialOrd` (not `Ord`) so floats work too.",
+        book_links: [
+            (title: "The Rust Book: Traits as Parameters / Trait Bounds", url: "https://doc.rust-lang.org/book/ch10-02-traits.html"),
+            (title: "Rust by Example: Bounds", url: "https://doc.rust-lang.org/rust-by-example/generics/bounds.html"),
+        ],
+        prerequisites: ["traits_01_renderable"],
+        engine_tags: ["ai", "components"],
+    ),
+    (
+        id: "traits_03_weapon_objects",
+        topic: "traits",
+        kind: FromScratch,
+        difficulty: 3,
+        title: "A Bag Full of Weapons",
+        story: "A player's inventory holds a mix of weapons — swords, bows, whatever the designers invent next — all in one list. The engine must add up their damage without knowing the concrete types. That is a job for trait objects.",
+        task: "Write a `Weapon` trait with `fn damage(&self) -> u32`, a unit struct `Sword` (damage 10), a struct `Bow { pub arrows: u32 }` (3 damage per arrow) and `total_damage`, which sums the damage of a slice of boxed weapons.",
+        signatures: [
+            "pub trait Weapon { fn damage(&self) -> u32; }",
+            "pub struct Sword;",
+            "pub struct Bow { pub arrows: u32 }",
+            "pub fn total_damage(weapons: &[Box<dyn Weapon>]) -> u32",
+        ],
+        starter_code: "// Write the trait, the two weapons and `total_damage` here.\n",
+        hidden_tests: r##"
+#[test]
+fn weapons_report_their_damage() {
+    assert_eq!(Sword.damage(), 10);
+    assert_eq!(Bow { arrows: 4 }.damage(), 12);
+    assert_eq!(Bow { arrows: 0 }.damage(), 0);
+}
+
+#[test]
+fn mixed_inventory_is_summed() {
+    let bag: Vec<Box<dyn Weapon>> = vec![Box::new(Sword), Box::new(Bow { arrows: 5 }), Box::new(Sword)];
+    assert_eq!(total_damage(&bag), 10 + 15 + 10);
+}
+
+#[test]
+fn empty_inventory_is_zero() {
+    assert_eq!(total_damage(&[]), 0);
+}
+
+#[test]
+fn designers_can_add_new_weapons() {
+    struct Club(u32);
+    impl Weapon for Club {
+        fn damage(&self) -> u32 {
+            self.0
+        }
+    }
+    let bag: Vec<Box<dyn Weapon>> = vec![Box::new(Club(7)), Box::new(Sword)];
+    assert_eq!(total_damage(&bag), 17);
+}
+"##,
+        hints: [
+            "`Vec<Box<dyn Weapon>>` can hold different concrete types as long as each implements `Weapon`. The trait must be *object safe*: a plain `&self` method like `damage` is fine.",
+            "Define `pub trait Weapon { fn damage(&self) -> u32; }`, then `impl Weapon for Sword { … }` and `impl Weapon for Bow { … }`. In `total_damage`, iterate and add up `w.damage()` — each call is dispatched dynamically.",
+            "pub fn total_damage(weapons: &[Box<dyn Weapon>]) -> u32 {\n    weapons.iter().map(|w| w.damage()).sum()\n}",
+        ],
+        solution: r##"pub trait Weapon {
+    fn damage(&self) -> u32;
+}
+
+pub struct Sword;
+
+pub struct Bow {
+    pub arrows: u32,
+}
+
+impl Weapon for Sword {
+    fn damage(&self) -> u32 {
+        10
+    }
+}
+
+impl Weapon for Bow {
+    fn damage(&self) -> u32 {
+        3 * self.arrows
+    }
+}
+
+pub fn total_damage(weapons: &[Box<dyn Weapon>]) -> u32 {
+    weapons.iter().map(|w| w.damage()).sum()
+}
+"##,
+        explanation: "Generics (`T: Weapon`) are resolved at compile time and give you one concrete type per list. A trait object (`Box<dyn Weapon>`) trades a small runtime cost — a vtable lookup per call — for the ability to store different concrete types side by side. Reach for `dyn Trait` when the set of types is open-ended or decided at runtime, and for generics when you want maximum speed and one type at a time.",
+        book_links: [
+            (title: "The Rust Book: Using Trait Objects That Allow for Values of Different Types", url: "https://doc.rust-lang.org/book/ch18-02-trait-objects.html"),
+            (title: "Rust by Example: Returning Traits with dyn", url: "https://doc.rust-lang.org/rust-by-example/trait/dyn.html"),
+        ],
+        prerequisites: ["traits_02_generic_strongest"],
+        engine_tags: ["components", "combat"],
+    ),
+    (
+        id: "traits_04_predict_dispatch",
+        topic: "traits",
+        kind: PredictOutput,
+        difficulty: 3,
+        title: "Who Answers the Call?",
+        story: "A bug report says the dragon announces itself like a slime. Before touching the code, work out which method runs for each enemy — default or override?",
+        task: "What does this program print?",
+        explanation: "`Slime` implements nothing, so it inherits both default methods: `greet` calls `self.name()`, which is the default \"enemy\". `Dragon` overrides BOTH methods, so its own `greet` runs — and even through a `Box<dyn Enemy>` the call is dispatched to the dragon's version at runtime. The last line calls the default `name` on `Slime` directly.",
+        solution: "a wild enemy appears\nDRAGON! RUN\nenemy",
+        book_links: [
+            (title: "The Rust Book: Default Implementations", url: "https://doc.rust-lang.org/book/ch10-02-traits.html"),
+            (title: "The Rust Book: Trait Objects", url: "https://doc.rust-lang.org/book/ch18-02-trait-objects.html"),
+        ],
+        prerequisites: ["traits_03_weapon_objects"],
+        engine_tags: ["components"],
+        quiz: Some((
+            question: "What does this program print?",
+            code: r##"trait Enemy {
+    fn name(&self) -> String {
+        String::from("enemy")
+    }
+    fn greet(&self) -> String {
+        format!("a wild {} appears", self.name())
+    }
+}
+
+struct Slime;
+struct Dragon;
+
+impl Enemy for Slime {}
+
+impl Enemy for Dragon {
+    fn name(&self) -> String {
+        String::from("dragon")
+    }
+    fn greet(&self) -> String {
+        format!("{}! RUN", self.name().to_uppercase())
+    }
+}
+
+fn main() {
+    let list: Vec<Box<dyn Enemy>> = vec![Box::new(Slime), Box::new(Dragon)];
+    for e in &list {
+        println!("{}", e.greet());
+    }
+    println!("{}", Slime.name());
+}"##,
+            options: [
+                "a wild enemy appears\nDRAGON! RUN\nenemy",
+                "a wild enemy appears\na wild dragon appears\nenemy",
+                "a wild enemy appears\nDRAGON! RUN\ndragon",
+                "a wild enemy appears\na wild enemy appears\nenemy",
+            ],
+            correct: 0,
+            verify: RunOutput,
+        )),
+    ),
+    (
+        id: "traits_05_review_impl_trait",
+        topic: "traits",
+        kind: CodeReview,
+        difficulty: 3,
+        title: "Review: Returning a Shape",
+        story: "Four functions that return \"some shape\" were submitted in one pull request. The author swears they all build, but CI is red.",
+        task: "Which function does NOT compile?",
+        explanation: "`impl Shape` means \"ONE concrete type that implements Shape, chosen by the function body\". The `if` branch returns a `Square` and the `else` branch a `Circle`: two different types, so the compiler rejects it (E0308). To return different types depending on a runtime condition you need a trait object — `Box<dyn Shape>` — or an enum. Returning one type whose *value* varies (the `Square(if …)` version) is fine.",
+        solution: "Option B: `-> impl Shape` must be a single concrete type, but the two branches return `Square` and `Circle`.",
+        book_links: [
+            (title: "The Rust Book: Returning Types That Implement Traits", url: "https://doc.rust-lang.org/book/ch10-02-traits.html"),
+            (title: "The Rust Book: Trait Objects", url: "https://doc.rust-lang.org/book/ch18-02-trait-objects.html"),
+        ],
+        prerequisites: ["traits_04_predict_dispatch"],
+        engine_tags: ["components", "rendering"],
+        quiz: Some((
+            question: "Which function does NOT compile?",
+            code: "",
+            options_are_code: true,
+            options: [
+                "fn pick(big: bool) -> Box<dyn Shape> {\n    if big {\n        Box::new(Square(4.0))\n    } else {\n        Box::new(Circle(1.0))\n    }\n}",
+                "fn pick(big: bool) -> impl Shape {\n    if big {\n        Square(4.0)\n    } else {\n        Circle(1.0)\n    }\n}",
+                "fn pick(big: bool) -> impl Shape {\n    Square(if big { 4.0 } else { 1.0 })\n}",
+                "fn total(shapes: &[&dyn Shape]) -> f32 {\n    shapes.iter().map(|s| s.area()).sum()\n}",
+            ],
+            correct: 1,
+            verify: OnlyCorrectFailsToCompile,
+            wrapper: "trait Shape {\n    fn area(&self) -> f32;\n}\nstruct Circle(f32);\nstruct Square(f32);\nimpl Shape for Circle {\n    fn area(&self) -> f32 {\n        3.14 * self.0 * self.0\n    }\n}\nimpl Shape for Square {\n    fn area(&self) -> f32 {\n        self.0 * self.0\n    }\n}\n\n{CODE}\n\nfn main() {}\n",
+        )),
+    ),
+]

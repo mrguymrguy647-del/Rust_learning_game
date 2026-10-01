@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
 
-pub use challenge::{BookLink, Challenge, ChallengeKind, Check, Quiz, Rewards};
+pub use challenge::{BookLink, Challenge, ChallengeKind, Check, Quiz, QuizVerify, Rewards};
 pub use game::{
     AchievementDef, Balance, ChoiceAction, CodexEntry, CompetitorDef, Cond, ContractTemplate, Effect,
     EngineModuleDef, ErrorExplainer, EventChoice, EventDef, EventKind, GenreDef, Identified, MarketingDef,

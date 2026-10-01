@@ -94,6 +94,21 @@ impl Toolchain {
         }
     }
 
+    /// The `rustc` to use: next to cargo when known, otherwise whatever is on PATH.
+    pub fn rustc_path(&self) -> PathBuf {
+        match self.bin_dir() {
+            Some(dir) => {
+                let candidate = dir.join(if cfg!(windows) { "rustc.exe" } else { "rustc" });
+                if candidate.exists() {
+                    candidate
+                } else {
+                    PathBuf::from("rustc")
+                }
+            }
+            None => PathBuf::from("rustc"),
+        }
+    }
+
     /// A directory to add to PATH so cargo can find its sibling `rustc`.
     pub fn bin_dir(&self) -> Option<PathBuf> {
         self.cargo.parent().filter(|p| !p.as_os_str().is_empty()).map(PathBuf::from)

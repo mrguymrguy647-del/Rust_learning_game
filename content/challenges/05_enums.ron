@@ -1,0 +1,373 @@
+// Topic 5: Enums & Pattern Matching — "Game states & input handling"
+[
+    (
+        id: "enums_01_game_state",
+        topic: "enums",
+        kind: Complete,
+        difficulty: 1,
+        title: "The State Machine",
+        story: "The game is either in the menu, playing, paused or over — never two at once. A state machine as an enum makes illegal combinations impossible, but someone has to write the transitions.",
+        task: "Complete `next_state`. Menu + start → Playing. Playing + pause → Paused; Playing + player_dead → GameOver (death wins over pause). Paused + pause → Playing. GameOver + start → Menu. In every other case the state stays the same.",
+        signatures: ["pub fn next_state(state: GameState, start: bool, pause: bool, player_dead: bool) -> GameState"],
+        starter_code: r##"#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum GameState {
+    Menu,
+    Playing,
+    Paused,
+    GameOver,
+}
+
+pub fn next_state(state: GameState, start: bool, pause: bool, player_dead: bool) -> GameState {
+    // TODO: use `match`
+    todo!()
+}
+"##,
+        hidden_tests: r##"
+use GameState::*;
+
+#[test]
+fn menu_waits_for_start() {
+    assert_eq!(next_state(Menu, true, false, false), Playing);
+    assert_eq!(next_state(Menu, false, true, true), Menu);
+}
+
+#[test]
+fn playing_can_pause_or_die() {
+    assert_eq!(next_state(Playing, false, true, false), Paused);
+    assert_eq!(next_state(Playing, false, false, true), GameOver);
+    assert_eq!(next_state(Playing, false, true, true), GameOver);
+    assert_eq!(next_state(Playing, true, false, false), Playing);
+}
+
+#[test]
+fn paused_resumes_on_pause() {
+    assert_eq!(next_state(Paused, false, true, false), Playing);
+    assert_eq!(next_state(Paused, true, false, false), Paused);
+}
+
+#[test]
+fn game_over_returns_to_the_menu() {
+    assert_eq!(next_state(GameOver, true, false, false), Menu);
+    assert_eq!(next_state(GameOver, false, true, false), GameOver);
+}
+"##,
+        hints: [
+            "`match state { … }` lets you write one arm per variant. Each arm can run an `if` to look at the buttons.",
+            "In the `Playing` arm check `player_dead` first, then `pause`. Arms are expressions: `Playing => if player_dead { GameOver } else if pause { Paused } else { Playing }`.",
+            "match state {\n    GameState::Menu => if start { GameState::Playing } else { GameState::Menu },\n    GameState::Playing => /* dead first, then pause */,\n    // Paused, GameOver …\n}",
+        ],
+        solution: r##"#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum GameState {
+    Menu,
+    Playing,
+    Paused,
+    GameOver,
+}
+
+pub fn next_state(state: GameState, start: bool, pause: bool, player_dead: bool) -> GameState {
+    match state {
+        GameState::Menu => {
+            if start {
+                GameState::Playing
+            } else {
+                GameState::Menu
+            }
+        }
+        GameState::Playing => {
+            if player_dead {
+                GameState::GameOver
+            } else if pause {
+                GameState::Paused
+            } else {
+                GameState::Playing
+            }
+        }
+        GameState::Paused => {
+            if pause {
+                GameState::Playing
+            } else {
+                GameState::Paused
+            }
+        }
+        GameState::GameOver => {
+            if start {
+                GameState::Menu
+            } else {
+                GameState::GameOver
+            }
+        }
+    }
+}
+"##,
+        explanation: "An `enum` lists every state a value can be in; `match` forces you to handle every one of them. If you add a `Loading` variant later, the compiler will point at each `match` that needs updating. State machines modelled this way cannot represent nonsense like \"playing and game over\".",
+        book_links: [
+            (title: "The Rust Book: Defining an Enum", url: "https://doc.rust-lang.org/book/ch06-01-defining-an-enum.html"),
+            (title: "The Rust Book: The match Control Flow Construct", url: "https://doc.rust-lang.org/book/ch06-02-match.html"),
+        ],
+        prerequisites: [],
+        engine_tags: ["input"],
+    ),
+    (
+        id: "enums_02_non_exhaustive",
+        topic: "enums",
+        kind: FixCompile,
+        difficulty: 2,
+        title: "The Missing Arrow Key",
+        story: "The key-binding overlay shows a letter for each direction. After the designers added a fourth direction, the build broke: the compiler says your `match` does not cover every case.",
+        task: "Fix the compile error so `key_label` returns \"W\", \"S\", \"A\" and \"D\" for Up, Down, Left and Right. Handle `Right` explicitly — do not use a catch-all `_` arm.",
+        signatures: ["pub fn key_label(d: Direction) -> &'static str"],
+        starter_code: r##"#[derive(Debug, Clone, Copy)]
+pub enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+pub fn key_label(d: Direction) -> &'static str {
+    match d {
+        Direction::Up => "W",
+        Direction::Down => "S",
+        Direction::Left => "A",
+    }
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn every_direction_has_a_key() {
+    assert_eq!(key_label(Direction::Up), "W");
+    assert_eq!(key_label(Direction::Down), "S");
+    assert_eq!(key_label(Direction::Left), "A");
+    assert_eq!(key_label(Direction::Right), "D");
+}
+"##,
+        checks: [
+            ForbidText(text: "_=>", message: "Name the missing variant instead of using a catch-all `_` arm: the compiler can then warn you when a new direction is added."),
+        ],
+        hints: [
+            "A `match` must cover every variant of the enum. The compiler error lists which one is missing.",
+            "`Direction::Right` has no arm. Add one that returns the right key.",
+            "        Direction::Right => \"D\",",
+        ],
+        solution: r##"#[derive(Debug, Clone, Copy)]
+pub enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+pub fn key_label(d: Direction) -> &'static str {
+    match d {
+        Direction::Up => "W",
+        Direction::Down => "S",
+        Direction::Left => "A",
+        Direction::Right => "D",
+    }
+}
+"##,
+        explanation: "Exhaustive matching (E0004) is one of Rust's best safety nets: when you add a variant, every `match` that forgot it fails to compile instead of silently doing the wrong thing at runtime. A catch-all `_ =>` arm would also silence the error — and with it, that protection — so use it only when \"everything else\" really is one behaviour.",
+        book_links: [
+            (title: "The Rust Book: Matches Are Exhaustive", url: "https://doc.rust-lang.org/book/ch06-02-match.html"),
+        ],
+        prerequisites: ["enums_01_game_state"],
+        engine_tags: ["input"],
+    ),
+    (
+        id: "enums_03_input_parser",
+        topic: "enums",
+        kind: FromScratch,
+        difficulty: 3,
+        title: "The Debug Console",
+        story: "QA wants a developer console: type `move 3 -2`, `attack goblin` or `quit` and the game reacts. Unknown or malformed input must be ignored politely instead of crashing.",
+        task: "Write `parse_command`. \"quit\" → `Quit`. \"move X Y\" with two integers → `Move(X, Y)`. \"attack NAME\" (exactly one word) → `Attack(NAME)`. Anything else → `None`. Extra spaces between words are allowed.",
+        signatures: ["pub fn parse_command(input: &str) -> Option<Command>"],
+        starter_code: r##"#[derive(Debug, PartialEq)]
+pub enum Command {
+    Move(i32, i32),
+    Attack(String),
+    Quit,
+}
+
+// Write `parse_command` here.
+"##,
+        hidden_tests: r##"
+#[test]
+fn quit_command() {
+    assert_eq!(parse_command("quit"), Some(Command::Quit));
+    assert_eq!(parse_command("  quit  "), Some(Command::Quit));
+}
+
+#[test]
+fn move_command_with_integers() {
+    assert_eq!(parse_command("move 3 -2"), Some(Command::Move(3, -2)));
+    assert_eq!(parse_command("move   10    0"), Some(Command::Move(10, 0)));
+}
+
+#[test]
+fn attack_command() {
+    assert_eq!(parse_command("attack goblin"), Some(Command::Attack("goblin".to_string())));
+}
+
+#[test]
+fn malformed_input_is_ignored() {
+    assert_eq!(parse_command(""), None);
+    assert_eq!(parse_command("dance"), None);
+    assert_eq!(parse_command("move 3"), None);
+    assert_eq!(parse_command("move a b"), None);
+    assert_eq!(parse_command("move 1 2 3"), None);
+    assert_eq!(parse_command("attack"), None);
+    assert_eq!(parse_command("attack the goblin"), None);
+    assert_eq!(parse_command("quit now"), None);
+}
+"##,
+        hints: [
+            "Split the input into words with `split_whitespace()`, collect them into a `Vec<&str>`, and then match on the whole slice.",
+            "Slice patterns work in `match`: `[\"quit\"] => …`, `[\"move\", x, y] => …`, `[\"attack\", name] => …`, `_ => None`. For `move`, parse both numbers with `.parse::<i32>().ok()?` or a nested `match`.",
+            "pub fn parse_command(input: &str) -> Option<Command> {\n    let words: Vec<&str> = input.split_whitespace().collect();\n    match words.as_slice() {\n        [\"quit\"] => Some(Command::Quit),\n        [\"move\", x, y] => { /* parse x and y */ }\n        [\"attack\", name] => Some(Command::Attack(name.to_string())),\n        _ => None,\n    }\n}",
+        ],
+        solution: r##"#[derive(Debug, PartialEq)]
+pub enum Command {
+    Move(i32, i32),
+    Attack(String),
+    Quit,
+}
+
+pub fn parse_command(input: &str) -> Option<Command> {
+    let words: Vec<&str> = input.split_whitespace().collect();
+    match words.as_slice() {
+        ["quit"] => Some(Command::Quit),
+        ["move", x, y] => {
+            let x = x.parse::<i32>().ok()?;
+            let y = y.parse::<i32>().ok()?;
+            Some(Command::Move(x, y))
+        }
+        ["attack", name] => Some(Command::Attack(name.to_string())),
+        _ => None,
+    }
+}
+"##,
+        explanation: "Enums can carry data (`Move(i32, i32)`, `Attack(String)`), and `match` can destructure a whole slice at once, which turns a tiny command language into a readable table. Returning `Option<Command>` makes \"unknown command\" a normal value the caller must deal with, and `?` on `.ok()` converts a parse failure into an early `None`.",
+        book_links: [
+            (title: "The Rust Book: Enum Values", url: "https://doc.rust-lang.org/book/ch06-01-defining-an-enum.html"),
+            (title: "The Rust Book: Pattern Syntax", url: "https://doc.rust-lang.org/book/ch19-03-pattern-syntax.html"),
+        ],
+        prerequisites: ["enums_02_non_exhaustive"],
+        engine_tags: ["input"],
+    ),
+    (
+        id: "enums_04_option_chain",
+        topic: "enums",
+        kind: Refactor,
+        difficulty: 3,
+        title: "Option Pyramids",
+        story: "Code review again. The loot-table code works, but nested `match` expressions and manual loops form a pyramid of doom. The `Option` type has combinators precisely so you never have to write this.",
+        task: "Refactor both functions without changing behaviour. Do not use the keywords `match` or `for`, and do not call `unwrap`. Use `Option` methods (`map`, `and_then`, `unwrap_or`, …) and iterator methods instead.",
+        signatures: [
+            "pub fn first_even_square(values: &[i32]) -> Option<i32>",
+            "pub fn lookup_label(id: Option<u32>, names: &[&str]) -> String",
+        ],
+        starter_code: r##"pub fn first_even_square(values: &[i32]) -> Option<i32> {
+    let mut found = None;
+    for v in values {
+        if v % 2 == 0 {
+            found = Some(v * v);
+            break;
+        }
+    }
+    found
+}
+
+pub fn lookup_label(id: Option<u32>, names: &[&str]) -> String {
+    match id {
+        Some(i) => match names.get(i as usize) {
+            Some(name) => name.to_string(),
+            None => String::from("unknown"),
+        },
+        None => String::from("none"),
+    }
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn square_of_the_first_even_number() {
+    assert_eq!(first_even_square(&[3, 5, 4, 6]), Some(16));
+    assert_eq!(first_even_square(&[2]), Some(4));
+    assert_eq!(first_even_square(&[1, 3, 5]), None);
+    assert_eq!(first_even_square(&[]), None);
+    assert_eq!(first_even_square(&[-6, 2]), Some(36));
+}
+
+#[test]
+fn labels() {
+    let names = ["sword", "shield", "potion"];
+    assert_eq!(lookup_label(Some(1), &names), "shield");
+    assert_eq!(lookup_label(Some(9), &names), "unknown");
+    assert_eq!(lookup_label(None, &names), "none");
+}
+"##,
+        checks: [
+            ForbidWord(word: "match", message: "Replace the `match` with Option combinators such as `and_then`, `map` and `unwrap_or`."),
+            ForbidWord(word: "for", message: "Replace the `for` loop with an iterator method such as `find` or `iter().find(..)`."),
+            ForbidWord(word: "unwrap", message: "Do not call `unwrap`; `unwrap_or` or `unwrap_or_else` give a default instead of panicking."),
+            RequireText(text: ".map(", message: "Use `.map(...)` on an Option or iterator."),
+        ],
+        hints: [
+            "`Option::and_then` chains a step that itself returns an Option; `Option::map` transforms the value inside `Some`; `unwrap_or` supplies a default.",
+            "For the first function: `values.iter().find(|v| *v % 2 == 0).map(|v| v * v)`. For the second: `id.and_then(|i| names.get(i as usize))` gives an `Option<&&str>`; map it to a `String` and fall back to \"unknown\" — but only when `id` was `Some`!",
+            "pub fn lookup_label(id: Option<u32>, names: &[&str]) -> String {\n    id.map(|i| {\n        names.get(i as usize).map(|n| n.to_string()).unwrap_or_else(|| String::from(\"unknown\"))\n    })\n    .unwrap_or_else(|| String::from(\"none\"))\n}",
+        ],
+        solution: r##"pub fn first_even_square(values: &[i32]) -> Option<i32> {
+    values.iter().find(|v| *v % 2 == 0).map(|v| v * v)
+}
+
+pub fn lookup_label(id: Option<u32>, names: &[&str]) -> String {
+    id.map(|i| names.get(i as usize).map(|n| n.to_string()).unwrap_or_else(|| String::from("unknown")))
+        .unwrap_or_else(|| String::from("none"))
+}
+"##,
+        explanation: "`Option` is a tiny enum, but its methods cover most of what you would otherwise `match`: `map` to transform, `and_then` to chain fallible steps, `unwrap_or`/`unwrap_or_else` to supply defaults. Iterator methods like `find` replace search loops. The result is shorter, has no mutable state and no early `break` — and every case is still handled.",
+        book_links: [
+            (title: "The Rust Book: The Option Enum", url: "https://doc.rust-lang.org/book/ch06-01-defining-an-enum.html"),
+            (title: "Rust by Example: Combinators map and and_then", url: "https://doc.rust-lang.org/rust-by-example/error/option_unwrap/map.html"),
+        ],
+        prerequisites: ["enums_03_input_parser"],
+        engine_tags: ["input"],
+    ),
+    (
+        id: "enums_05_review_let_else",
+        topic: "enums",
+        kind: CodeReview,
+        difficulty: 3,
+        title: "Review: Early Exits",
+        story: "A reviewer flagged one of four snippets as broken. All of them try to double the value inside an `Option<i32>`, returning 0 for `None` — but only three follow Rust's rules for taking a pattern apart.",
+        task: "Which snippet does NOT compile?",
+        explanation: "`let … else` binds the pattern or runs the `else` block — and that block MUST diverge (return, break, continue or panic) because the code after it assumes `x` exists. Option B's else block just evaluates to `0`, which would let execution continue without `x`. `if let … else`, `match` and `let … else { return … }` are all fine.",
+        solution: "Option B: the `else` branch of `let … else` must diverge (for example with `return`), not produce a value.",
+        book_links: [
+            (title: "The Rust Book: Concise Control Flow with if let and let else", url: "https://doc.rust-lang.org/book/ch06-03-if-let.html"),
+            (title: "Rust by Example: let-else", url: "https://doc.rust-lang.org/rust-by-example/flow_control/let_else.html"),
+        ],
+        prerequisites: ["enums_04_option_chain"],
+        engine_tags: ["input"],
+        quiz: Some((
+            question: "Which snippet does NOT compile?",
+            code: "fn double(input: Option<i32>) -> i32 {\n    // <the snippet goes here>\n}",
+            options_are_code: true,
+            options: [
+                r##"let Some(x) = input else { return 0 };
+x * 2"##,
+                r##"let Some(x) = input else { 0 };
+x * 2"##,
+                r##"if let Some(x) = input { x * 2 } else { 0 }"##,
+                r##"match input {
+    Some(x) => x * 2,
+    None => 0,
+}"##,
+            ],
+            correct: 1,
+            verify: OnlyCorrectFailsToCompile,
+            wrapper: "fn double(input: Option<i32>) -> i32 {\n{CODE}\n}\nfn main() { let _ = double(Some(1)); }\n",
+        )),
+    ),
+]

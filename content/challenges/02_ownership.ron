@@ -98,6 +98,7 @@ let b = a;
 println!("{a:?} {b:?}");"##,
             ],
             correct: 1,
+            verify: OnlyCorrectFailsToCompile,
         )),
     ),
     (
@@ -154,5 +155,134 @@ fn keeps_duplicates() {
         ],
         prerequisites: ["ownership_02_copy_or_move_review"],
         engine_tags: ["assets"],
+    ),
+    (
+        id: "ownership_04_clone_refactor",
+        topic: "ownership",
+        kind: Refactor,
+        difficulty: 3,
+        title: "Stop Cloning Everything",
+        story: "A profiler run shows the asset manager spending most of its time copying strings. The previous developer sprinkled `.clone()` wherever the compiler complained, without asking why.",
+        task: "Refactor both functions so they contain no `.clone()` at all and `shout_all` accepts a slice (`&[String]`) instead of `&Vec<String>`. Behaviour must not change.",
+        signatures: [
+            "pub fn longest_name(names: Vec<String>) -> String",
+            "pub fn shout_all(names: &[String]) -> Vec<String>",
+        ],
+        starter_code: r##"pub fn longest_name(names: Vec<String>) -> String {
+    let mut best = String::new();
+    for name in names.clone() {
+        if name.len() > best.len() {
+            best = name.clone();
+        }
+    }
+    best
+}
+
+pub fn shout_all(names: &Vec<String>) -> Vec<String> {
+    let copy = names.clone();
+    copy.iter().map(|n| n.to_uppercase()).collect()
+}
+"##,
+        hidden_tests: r##"
+fn names() -> Vec<String> {
+    ["Ada", "Grace", "Linus", "Margaret"].iter().map(|s| s.to_string()).collect()
+}
+
+#[test]
+fn finds_the_longest_name() {
+    assert_eq!(longest_name(names()), "Margaret");
+    assert_eq!(longest_name(Vec::new()), "");
+}
+
+#[test]
+fn first_of_equally_long_names_wins() {
+    let v = vec![String::from("abc"), String::from("xyz")];
+    assert_eq!(longest_name(v), "abc");
+}
+
+#[test]
+fn shouting_does_not_consume_the_input() {
+    let v = names();
+    let loud = shout_all(&v);
+    assert_eq!(loud, vec!["ADA", "GRACE", "LINUS", "MARGARET"]);
+    assert_eq!(v.len(), 4);
+}
+"##,
+        checks: [
+            ForbidText(text: ".clone()", message: "No `.clone()` is needed: the function already owns the Vec (move out of it) or only reads it (borrow)."),
+            ForbidText(text: "&Vec<", message: "Take a slice (`&[String]`) instead of `&Vec<String>` — it accepts more callers."),
+        ],
+        hints: [
+            "`longest_name` takes the Vec BY VALUE, so it owns every String. Iterating over the Vec itself (`for name in names`) hands each String to you — no copy needed.",
+            "Assigning `best = name;` moves the String into `best`. For `shout_all`, `iter()` only borrows, so you can call `names.iter()` directly on the parameter. A parameter of type `&[String]` accepts `&Vec<String>` too (deref coercion).",
+            "pub fn longest_name(names: Vec<String>) -> String {\n    let mut best = String::new();\n    for name in names {\n        // move `name` into `best` when it is longer\n    }\n    best\n}\n\npub fn shout_all(names: &[String]) -> Vec<String> {\n    names.iter().map(|n| n.to_uppercase()).collect()\n}",
+        ],
+        solution: r##"pub fn longest_name(names: Vec<String>) -> String {
+    let mut best = String::new();
+    for name in names {
+        if name.len() > best.len() {
+            best = name;
+        }
+    }
+    best
+}
+
+pub fn shout_all(names: &[String]) -> Vec<String> {
+    names.iter().map(|n| n.to_uppercase()).collect()
+}
+"##,
+        explanation: "A `.clone()` is a deep copy — here every string was allocated and copied for nothing. When a function owns its argument, iterate by value and *move* what you keep. When it only reads, borrow. Accepting `&[T]` rather than `&Vec<T>` is the idiomatic way to say \"any contiguous sequence of Ts\": callers can pass `&vec`, `&array` or a sub-slice.",
+        book_links: [
+            (title: "The Rust Book: Ways Variables and Data Interact: Clone", url: "https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html"),
+            (title: "The Rust Book: The Slice Type", url: "https://doc.rust-lang.org/book/ch04-03-slices.html"),
+        ],
+        prerequisites: ["ownership_03_merge_loot"],
+        engine_tags: ["assets"],
+    ),
+    (
+        id: "ownership_05_predict_drop",
+        topic: "ownership",
+        kind: PredictOutput,
+        difficulty: 3,
+        title: "When Do Assets Die?",
+        story: "The asset manager logs every time a texture or sound is freed, so you can find leaks. Before you read the log, predict it.",
+        task: "What does this program print? (Hint: values are dropped when their owner goes out of scope, in reverse order of declaration.)",
+        explanation: "`music` lives in the inner block, so it is dropped at the closing brace — before \"end of main\". `let moved = a;` moves the texture, so `a` no longer owns anything. At the end of `main`, locals are dropped in REVERSE order of declaration: `moved` (the texture) first, then `b` (the sound).",
+        solution: "inner scope\ndrop music\nend of main\ndrop texture\ndrop sound",
+        book_links: [
+            (title: "The Rust Book: The Drop Trait", url: "https://doc.rust-lang.org/book/ch15-03-drop.html"),
+            (title: "Rust by Example: RAII", url: "https://doc.rust-lang.org/rust-by-example/scope/raii.html"),
+        ],
+        prerequisites: ["ownership_04_clone_refactor"],
+        engine_tags: ["assets"],
+        quiz: Some((
+            question: "What does this program print?",
+            code: r##"struct Asset(&'static str);
+
+impl Drop for Asset {
+    fn drop(&mut self) {
+        println!("drop {}", self.0);
+    }
+}
+
+fn main() {
+    let a = Asset("texture");
+    let b = Asset("sound");
+    {
+        let c = Asset("music");
+        println!("inner scope");
+    }
+    let moved = a;
+    println!("end of main");
+}"##,
+            options: [
+                "inner scope\ndrop music\nend of main\ndrop texture\ndrop sound",
+                "inner scope\ndrop music\nend of main\ndrop sound\ndrop texture",
+                "drop music\ninner scope\nend of main\ndrop texture\ndrop sound",
+                "inner scope\nend of main\ndrop music\ndrop texture\ndrop sound",
+            ],
+            correct: 0,
+            verify: RunOutput,
+        )),
     ),
 ]

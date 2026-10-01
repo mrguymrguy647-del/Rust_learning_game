@@ -1,0 +1,252 @@
+// Topic 8: Modules & Crates — "Organizing the engine"
+[
+    (
+        id: "modules_01_visibility",
+        topic: "modules",
+        kind: FixCompile,
+        difficulty: 1,
+        title: "Private by Default",
+        story: "The engine's audio code lives in its own module. The gameplay code tries to play a sound through it, and the compiler claims the function is private.",
+        task: "Fix the compile error so `jump_sfx` returns \"playing jump\" and `current_volume` returns 80.",
+        signatures: [
+            "pub fn jump_sfx() -> String",
+            "pub fn current_volume() -> u8",
+        ],
+        starter_code: r##"mod audio {
+    fn play_sound(name: &str) -> String {
+        format!("playing {name}")
+    }
+
+    pub fn volume() -> u8 {
+        80
+    }
+}
+
+pub fn jump_sfx() -> String {
+    audio::play_sound("jump")
+}
+
+pub fn current_volume() -> u8 {
+    audio::volume()
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn the_jump_sound_plays() {
+    assert_eq!(jump_sfx(), "playing jump");
+}
+
+#[test]
+fn volume_is_exposed() {
+    assert_eq!(current_volume(), 80);
+}
+"##,
+        hints: [
+            "Everything in a module is private to that module by default. Items you want to use from outside must be marked `pub`.",
+            "`audio::volume` already has `pub`; `play_sound` does not.",
+            "    pub fn play_sound(name: &str) -> String {",
+        ],
+        solution: r##"mod audio {
+    pub fn play_sound(name: &str) -> String {
+        format!("playing {name}")
+    }
+
+    pub fn volume() -> u8 {
+        80
+    }
+}
+
+pub fn jump_sfx() -> String {
+    audio::play_sound("jump")
+}
+
+pub fn current_volume() -> u8 {
+    audio::volume()
+}
+"##,
+        explanation: "Rust modules are encapsulation boundaries: items are private unless declared `pub` (error E0603 \"function is private\"). That lets a module keep its internals free to change while promising only a small public surface. Parent modules cannot see a child's private items, but children can see everything their ancestors declare.",
+        book_links: [
+            (title: "The Rust Book: Defining Modules to Control Scope and Privacy", url: "https://doc.rust-lang.org/book/ch07-02-defining-modules-to-control-scope-and-privacy.html"),
+            (title: "Rust by Example: Visibility", url: "https://doc.rust-lang.org/rust-by-example/mod/visibility.html"),
+        ],
+        prerequisites: [],
+        engine_tags: ["modular"],
+    ),
+    (
+        id: "modules_02_organize",
+        topic: "modules",
+        kind: FromScratch,
+        difficulty: 2,
+        title: "Give Physics a Home",
+        story: "Physics constants and functions are scattered across the engine. Create a proper `physics` module and re-export the most-used function so gameplay code can call it directly.",
+        task: "Write a public module `physics` containing `pub const GRAVITY: f32 = 9.8;` and `pub fn fall_distance(seconds: f32) -> f32` (distance = ½ · GRAVITY · seconds²). At the top level, re-export the function with `pub use` so `fall_distance(2.0)` works as well as `physics::fall_distance(2.0)`.",
+        signatures: [
+            "pub mod physics { pub const GRAVITY: f32; pub fn fall_distance(seconds: f32) -> f32 }",
+            "pub use physics::fall_distance;",
+        ],
+        starter_code: r##"// Create the `physics` module here.
+"##,
+        hidden_tests: r##"
+#[test]
+fn gravity_constant_is_exposed() {
+    assert_eq!(physics::GRAVITY, 9.8);
+}
+
+#[test]
+fn fall_distance_through_the_module_path() {
+    assert!((physics::fall_distance(2.0) - 19.6).abs() < 1e-4);
+    assert_eq!(physics::fall_distance(0.0), 0.0);
+}
+
+#[test]
+fn fall_distance_through_the_re_export() {
+    assert!((fall_distance(1.0) - 4.9).abs() < 1e-4);
+}
+"##,
+        checks: [
+            RequireText(text: "modphysics", message: "Declare the module with `mod physics`."),
+            RequireText(text: "pubuse", message: "Re-export the function at the top level with `pub use`."),
+        ],
+        hints: [
+            "`pub mod physics { … }` declares a module inline. Everything inside needs `pub` to be visible from outside.",
+            "A `const` and a `fn` are declared normally inside the module. Inside `physics`, `GRAVITY` is directly in scope.",
+            "pub mod physics {\n    pub const GRAVITY: f32 = 9.8;\n    pub fn fall_distance(seconds: f32) -> f32 {\n        0.5 * GRAVITY * seconds * seconds\n    }\n}\n\npub use physics::fall_distance;",
+        ],
+        solution: r##"pub mod physics {
+    pub const GRAVITY: f32 = 9.8;
+
+    pub fn fall_distance(seconds: f32) -> f32 {
+        0.5 * GRAVITY * seconds * seconds
+    }
+}
+
+pub use physics::fall_distance;
+"##,
+        explanation: "Modules group related code under a path (`physics::fall_distance`). `pub use` is a *re-export*: it makes an item available at a second, shorter path without moving it — the way libraries present a tidy public API (`engine::Vec2`) while the implementation lives deeper (`engine::math::vec2::Vec2`).",
+        book_links: [
+            (title: "The Rust Book: Bringing Paths into Scope with the use Keyword", url: "https://doc.rust-lang.org/book/ch07-04-bringing-paths-into-scope-with-the-use-keyword.html"),
+        ],
+        prerequisites: ["modules_01_visibility"],
+        engine_tags: ["modular"],
+    ),
+    (
+        id: "modules_03_predict_paths",
+        topic: "modules",
+        kind: PredictOutput,
+        difficulty: 3,
+        title: "Which play()?",
+        story: "Two modules both define a function called `play`. The engine uses `self::`, `super::` and a `use` import. Predict which one runs where.",
+        task: "What does this program print?",
+        explanation: "Inside `effects`, `self::play()` is the function in `effects` itself and `super::play()` is the one in the parent module `audio`. `use audio::effects;` brings the *module* `effects` into scope in `main`, so `effects::play()` is the effects version, while `audio::play()` is spelled out in full.",
+        solution: "audio::play\neffects::play\neffects::play + audio::play",
+        book_links: [
+            (title: "The Rust Book: Paths for Referring to an Item in the Module Tree", url: "https://doc.rust-lang.org/book/ch07-03-paths-for-referring-to-an-item-in-the-module-tree.html"),
+            (title: "Rust by Example: super and self", url: "https://doc.rust-lang.org/rust-by-example/mod/super.html"),
+        ],
+        prerequisites: ["modules_02_organize"],
+        engine_tags: ["modular"],
+        quiz: Some((
+            question: "What does this program print?",
+            code: r##"mod audio {
+    pub fn play() -> &'static str {
+        "audio::play"
+    }
+
+    pub mod effects {
+        pub fn play() -> &'static str {
+            "effects::play"
+        }
+
+        pub fn both() -> String {
+            format!("{} + {}", self::play(), super::play())
+        }
+    }
+}
+
+use audio::effects;
+
+fn main() {
+    println!("{}", audio::play());
+    println!("{}", effects::play());
+    println!("{}", effects::both());
+}"##,
+            options: [
+                "audio::play\neffects::play\neffects::play + audio::play",
+                "audio::play\naudio::play\naudio::play + audio::play",
+                "audio::play\neffects::play\naudio::play + effects::play",
+                "It does not compile: two functions are named `play`",
+            ],
+            correct: 0,
+            verify: RunOutput,
+        )),
+    ),
+    (
+        id: "modules_04_nested_privacy",
+        topic: "modules",
+        kind: FixCompile,
+        difficulty: 3,
+        title: "A Bag with a Private Field",
+        story: "The inventory module hides its `Bag` internals. The UI code wants to read the number of slots and the compiler refuses to look at the field.",
+        task: "Fix the compile error so `bag_size` returns 12. Keep the field private and expose the value through a public method (a getter) instead.",
+        signatures: ["pub fn bag_size() -> usize"],
+        starter_code: r##"pub mod inventory {
+    pub struct Bag {
+        slots: usize,
+    }
+
+    impl Bag {
+        pub fn new(slots: usize) -> Bag {
+            Bag { slots }
+        }
+    }
+}
+
+pub fn bag_size() -> usize {
+    let bag = inventory::Bag::new(12);
+    bag.slots
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn the_bag_has_twelve_slots() {
+    assert_eq!(bag_size(), 12);
+}
+"##,
+        checks: [
+            ForbidText(text: "pubslots", message: "Keep the field private: add a getter method such as `pub fn slots(&self) -> usize` instead of making the field `pub`."),
+        ],
+        hints: [
+            "Struct fields are private to the module that defines the struct, even if the struct itself is `pub`. Code outside the module cannot read `bag.slots`.",
+            "Give the type a public method that returns the field, and call that method instead of touching the field.",
+            "        pub fn slots(&self) -> usize {\n            self.slots\n        }\n    // …and in bag_size: bag.slots()",
+        ],
+        solution: r##"pub mod inventory {
+    pub struct Bag {
+        slots: usize,
+    }
+
+    impl Bag {
+        pub fn new(slots: usize) -> Bag {
+            Bag { slots }
+        }
+
+        pub fn slots(&self) -> usize {
+            self.slots
+        }
+    }
+}
+
+pub fn bag_size() -> usize {
+    let bag = inventory::Bag::new(12);
+    bag.slots()
+}
+"##,
+        explanation: "Privacy applies to fields as well as functions (E0616). Keeping fields private and exposing methods lets the module change its representation later and maintain invariants (for example, never allowing `slots` to be set to something silly). The module owns the data; everyone else asks through the public interface.",
+        book_links: [
+            (title: "The Rust Book: Making Structs and Enums Public", url: "https://doc.rust-lang.org/book/ch07-03-paths-for-referring-to-an-item-in-the-module-tree.html"),
+            (title: "Rust by Example: Struct visibility", url: "https://doc.rust-lang.org/rust-by-example/mod/struct_visibility.html"),
+        ],
+        prerequisites: ["modules_03_predict_paths"],
+        engine_tags: ["modular"],
+    ),
+]

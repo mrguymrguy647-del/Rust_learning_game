@@ -92,6 +92,49 @@ fn verdict_name(v: &Verdict) -> &'static str {
     }
 }
 
+/// Prove a quiz answer with the real compiler where the quiz asks for it.
+fn verify_quiz(runner: &Runner, c: &Challenge, q: &crate::data::Quiz, v: &mut Validation) {
+    use crate::data::QuizVerify;
+    let wrap = |option: &str| {
+        let template = if q.wrapper.trim().is_empty() { "fn main() {\n{CODE}\n}\n" } else { q.wrapper.as_str() };
+        template.replace("{CODE}", option)
+    };
+    match q.verify {
+        QuizVerify::None => {}
+        QuizVerify::RunOutput => {
+            let result = runner.check_snippet(&q.code, true);
+            if !result.compiled {
+                v.problems.push(format!("quiz program does not compile:\n{}", result.diagnostics.trim()));
+                return;
+            }
+            let got = result.stdout.trim().replace("\r\n", "\n");
+            if got != c.solution.trim() {
+                v.problems.push(format!("the program prints:\n{got}\nbut `solution` says:\n{}", c.solution.trim()));
+            }
+            if q.options[q.correct].trim() != c.solution.trim() {
+                v.problems.push("the correct option text must equal `solution`".into());
+            }
+            v.solution_result = "program output verified".into();
+        }
+        QuizVerify::OnlyCorrectFailsToCompile | QuizVerify::OnlyCorrectCompiles => {
+            let want_fail = q.verify == QuizVerify::OnlyCorrectFailsToCompile;
+            for (i, option) in q.options.iter().enumerate() {
+                let compiled = runner.check_snippet(&wrap(option), false).compiled;
+                let should_compile = if i == q.correct { !want_fail } else { want_fail };
+                if compiled != should_compile {
+                    v.problems.push(format!(
+                        "option {} {} but should {}",
+                        (b'A' + i as u8) as char,
+                        if compiled { "compiles" } else { "does not compile" },
+                        if should_compile { "compile" } else { "fail to compile" }
+                    ));
+                }
+            }
+            v.solution_result = "snippets verified with rustc".into();
+        }
+    }
+}
+
 pub fn validate_challenge(runner: &Runner, c: &Challenge) -> Validation {
     let started = Instant::now();
     let mut v = Validation {
@@ -107,6 +150,7 @@ pub fn validate_challenge(runner: &Runner, c: &Challenge) -> Validation {
         match &c.quiz {
             Some(q) if q.correct < q.options.len() && q.options.len() >= 2 => {
                 v.solution_result = format!("answer #{} of {}", q.correct + 1, q.options.len());
+                verify_quiz(runner, c, q, &mut v);
             }
             _ => v.problems.push("quiz payload missing or `correct` out of range".into()),
         }

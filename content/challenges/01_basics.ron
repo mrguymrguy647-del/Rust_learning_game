@@ -152,6 +152,7 @@ fn lives_never_go_negative() {
                 "It does not compile: `score` is declared three times",
             ],
             correct: 0,
+            verify: RunOutput,
         )),
     ),
     (
@@ -225,6 +226,63 @@ pub fn heal(hp: i32, amount: i32, max: i32) -> i32 {
             (title: "The Rust Book: Control Flow", url: "https://doc.rust-lang.org/book/ch03-05-control-flow.html"),
         ],
         prerequisites: ["basics_03_predict_shadowing"],
+        engine_tags: ["core_loop"],
+    ),
+    (
+        id: "basics_05_tick_loop",
+        topic: "basics",
+        kind: FromScratch,
+        difficulty: 2,
+        title: "Combo Meter",
+        story: "Pixel Pong now has a combo system. The game loop ticks many times per second, and the longer you keep the rally going, the more each tick is worth. The designer sent you the rules on a napkin.",
+        task: "Write `total_score(ticks)`. The score starts at 0 and the combo at 1. On every tick (numbered from 1) the score increases by the current combo; after every 10th tick the combo goes up by 1. Return the score after `ticks` ticks.",
+        signatures: ["pub fn total_score(ticks: u32) -> u32"],
+        starter_code: r##"// Write `total_score` here.
+"##,
+        hidden_tests: r##"
+#[test]
+fn no_ticks_no_score() {
+    assert_eq!(total_score(0), 0);
+}
+
+#[test]
+fn first_ten_ticks_are_worth_one_point_each() {
+    assert_eq!(total_score(1), 1);
+    assert_eq!(total_score(9), 9);
+    assert_eq!(total_score(10), 10);
+}
+
+#[test]
+fn the_combo_grows_after_every_tenth_tick() {
+    assert_eq!(total_score(11), 12);
+    assert_eq!(total_score(20), 30);
+    assert_eq!(total_score(25), 45);
+    assert_eq!(total_score(100), 550);
+}
+"##,
+        hints: [
+            "You need to repeat something for each tick. `for tick in 1..=ticks { … }` counts from 1 up to and including `ticks`.",
+            "Keep two mutable variables, `score` and `combo`. Inside the loop add `combo` to `score`, then use the remainder operator `%`: `tick % 10 == 0` is true on every tenth tick.",
+            "pub fn total_score(ticks: u32) -> u32 {\n    let mut score = 0;\n    let mut combo = 1;\n    for tick in 1..=ticks {\n        score += combo;\n        // every 10th tick the combo grows\n    }\n    score\n}",
+        ],
+        solution: r##"pub fn total_score(ticks: u32) -> u32 {
+    let mut score = 0;
+    let mut combo = 1;
+    for tick in 1..=ticks {
+        score += combo;
+        if tick % 10 == 0 {
+            combo += 1;
+        }
+    }
+    score
+}
+"##,
+        explanation: "This is the shape of every game loop: mutable state (`score`, `combo`) updated by a counted `for` loop over a range. `1..=ticks` is inclusive on both ends (`1..ticks` would stop one early), and `%` gives the remainder, which makes \"every Nth iteration\" logic easy. Rust infers `u32` for both variables from the return type.",
+        book_links: [
+            (title: "The Rust Book: Control Flow (loops)", url: "https://doc.rust-lang.org/book/ch03-05-control-flow.html"),
+            (title: "Rust by Example: for loops", url: "https://doc.rust-lang.org/rust-by-example/flow_control/for.html"),
+        ],
+        prerequisites: ["basics_04_refactor_clamp"],
         engine_tags: ["core_loop"],
     ),
 ]

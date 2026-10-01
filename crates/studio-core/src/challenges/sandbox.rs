@@ -52,6 +52,11 @@ impl Sandbox {
         self.dir.join("target")
     }
 
+    /// Scratch directory for standalone `rustc` snippets (quiz verification).
+    pub fn snippet_dir(&self) -> PathBuf {
+        self.dir.join("snippets")
+    }
+
     pub fn manifest_path(&self) -> PathBuf {
         self.project_dir().join("Cargo.toml")
     }

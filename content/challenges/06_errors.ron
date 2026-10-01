@@ -1,0 +1,333 @@
+// Topic 6: Error Handling — "Save/load system & file loading"
+[
+    (
+        id: "errors_01_parse_score",
+        topic: "errors",
+        kind: Complete,
+        difficulty: 1,
+        title: "Reading the High Score File",
+        story: "The save system reads the high score from a text file. Players have been known to edit that file by hand, so a bad value must produce a clear error — never a crash.",
+        task: "Complete `parse_score`. Trim the text first. Empty text → `Err(\"empty\")`. Text that is not a non-negative whole number → `Err` with a message that contains the offending text (for example \"not a number: abc\"). Otherwise `Ok(score)`.",
+        signatures: ["pub fn parse_score(text: &str) -> Result<u32, String>"],
+        starter_code: r##"pub fn parse_score(text: &str) -> Result<u32, String> {
+    // TODO
+    todo!()
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn valid_scores_are_parsed() {
+    assert_eq!(parse_score("42"), Ok(42));
+    assert_eq!(parse_score("  1000 \n"), Ok(1000));
+    assert_eq!(parse_score("0"), Ok(0));
+}
+
+#[test]
+fn empty_text_is_an_error() {
+    assert_eq!(parse_score(""), Err("empty".to_string()));
+    assert_eq!(parse_score("   "), Err("empty".to_string()));
+}
+
+#[test]
+fn garbage_mentions_what_was_wrong() {
+    let err = parse_score("abc").unwrap_err();
+    assert!(err.contains("abc"), "{err}");
+    let err = parse_score("-5").unwrap_err();
+    assert!(err.contains("-5"), "{err}");
+    assert!(parse_score("12.5").is_err());
+}
+"##,
+        hints: [
+            "`str::parse::<u32>()` returns a `Result<u32, ParseIntError>`. You need to turn the error type into a `String`.",
+            "`Result::map_err` converts the error half of a Result: `.map_err(|_| format!(…))`. Handle the empty case before parsing.",
+            "pub fn parse_score(text: &str) -> Result<u32, String> {\n    let trimmed = text.trim();\n    if trimmed.is_empty() {\n        return Err(String::from(\"empty\"));\n    }\n    trimmed.parse::<u32>().map_err(|_| format!(\"not a number: {trimmed}\"))\n}",
+        ],
+        solution: r##"pub fn parse_score(text: &str) -> Result<u32, String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Err(String::from("empty"));
+    }
+    trimmed.parse::<u32>().map_err(|_| format!("not a number: {trimmed}"))
+}
+"##,
+        explanation: "Rust has no exceptions: a function that can fail returns `Result<T, E>`, and the caller must decide what to do with the `Err`. `parse` is the standard example. `map_err` converts one error type into another without touching the success value — the building block behind the `?` operator you meet next.",
+        book_links: [
+            (title: "The Rust Book: Recoverable Errors with Result", url: "https://doc.rust-lang.org/book/ch09-02-recoverable-errors-with-result.html"),
+            (title: "Rust by Example: Result", url: "https://doc.rust-lang.org/rust-by-example/error/result.html"),
+        ],
+        prerequisites: [],
+        engine_tags: ["save"],
+    ),
+    (
+        id: "errors_02_question_mark",
+        topic: "errors",
+        kind: FixCompile,
+        difficulty: 2,
+        title: "The ? That Won't Compile",
+        story: "To add two numbers typed by the player, someone wrote the nice short version with `?`. The compiler answers that `?` can only be used in functions that return a `Result` or an `Option`.",
+        task: "Fix the compile error so `total` returns `Ok(sum)` for two valid numbers and the parse error otherwise.",
+        signatures: ["pub fn total(a: &str, b: &str) -> Result<i32, ParseIntError>"],
+        starter_code: r##"use std::num::ParseIntError;
+
+pub fn total(a: &str, b: &str) -> i32 {
+    let x = a.parse::<i32>()?;
+    let y = b.parse::<i32>()?;
+    x + y
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn adds_valid_numbers() {
+    assert_eq!(total("2", "3"), Ok(5));
+    assert_eq!(total("-10", "4"), Ok(-6));
+}
+
+#[test]
+fn invalid_input_is_an_error_not_a_panic() {
+    assert!(total("x", "3").is_err());
+    assert!(total("3", "").is_err());
+}
+"##,
+        hints: [
+            "`?` returns early with the error when a `Result` is `Err`. For that to type-check, the *function itself* must return a compatible `Result`.",
+            "Change the return type to `Result<i32, ParseIntError>` (the import is already there) and wrap the final value in `Ok(…)`.",
+            "pub fn total(a: &str, b: &str) -> Result<i32, ParseIntError> {\n    let x = a.parse::<i32>()?;\n    let y = b.parse::<i32>()?;\n    Ok(x + y)\n}",
+        ],
+        solution: r##"use std::num::ParseIntError;
+
+pub fn total(a: &str, b: &str) -> Result<i32, ParseIntError> {
+    let x = a.parse::<i32>()?;
+    let y = b.parse::<i32>()?;
+    Ok(x + y)
+}
+"##,
+        explanation: "`expr?` means \"if this is `Err(e)`, return `Err(e)` from the current function now; otherwise unwrap the `Ok` value\". It is only possible in a function whose return type can carry that error (E0277 otherwise). It replaces long chains of `match` on every fallible call, and it is how errors travel up to the code that knows how to handle them.",
+        book_links: [
+            (title: "The Rust Book: A Shortcut for Propagating Errors: the ? Operator", url: "https://doc.rust-lang.org/book/ch09-02-recoverable-errors-with-result.html"),
+            (title: "Rust by Example: The ? operator", url: "https://doc.rust-lang.org/rust-by-example/std/result/question_mark.html"),
+        ],
+        prerequisites: ["errors_01_parse_score"],
+        engine_tags: ["save"],
+    ),
+    (
+        id: "errors_03_save_error_type",
+        topic: "errors",
+        kind: FromScratch,
+        difficulty: 4,
+        title: "A Proper Error Type",
+        story: "Save files contain lines like `ferris = 7` (player name and level). Right now the loader reports every problem as a plain string. The tools team wants a real error type that the UI can match on and print nicely.",
+        task: "Define `SaveError` with variants `MissingField(String)` and `BadNumber(ParseIntError)` (derive `Debug` and `PartialEq`). Implement `Display` (\"missing field: NAME\" / \"bad number: <inner error>\") and `From<ParseIntError>`. Then write `parse_save_line`: split at the first `=`; no `=` → `MissingField(\"separator\")`; empty name → `MissingField(\"name\")`; level that is not a `u32` → `BadNumber` (use `?` so `From` does the conversion).",
+        signatures: [
+            "pub enum SaveError { MissingField(String), BadNumber(ParseIntError) }",
+            "impl fmt::Display for SaveError",
+            "impl From<ParseIntError> for SaveError",
+            "pub fn parse_save_line(line: &str) -> Result<(String, u32), SaveError>",
+        ],
+        starter_code: r##"use std::fmt;
+use std::num::ParseIntError;
+
+// Define SaveError and parse_save_line here.
+"##,
+        hidden_tests: r##"
+#[test]
+fn a_valid_line_is_parsed() {
+    assert_eq!(parse_save_line("ferris = 7"), Ok(("ferris".to_string(), 7)));
+    assert_eq!(parse_save_line("  ada=12 "), Ok(("ada".to_string(), 12)));
+}
+
+#[test]
+fn missing_separator_and_name_are_reported() {
+    assert_eq!(parse_save_line("ferris 7"), Err(SaveError::MissingField("separator".to_string())));
+    assert_eq!(parse_save_line(" = 7"), Err(SaveError::MissingField("name".to_string())));
+}
+
+#[test]
+fn bad_numbers_are_converted_with_question_mark() {
+    let err = parse_save_line("ferris = seven").unwrap_err();
+    assert!(matches!(err, SaveError::BadNumber(_)), "{err:?}");
+    assert!(parse_save_line("ferris = -1").is_err());
+}
+
+#[test]
+fn errors_print_nicely() {
+    let e = parse_save_line("= 7").unwrap_err();
+    assert_eq!(e.to_string(), "missing field: name");
+    let e = parse_save_line("a = x").unwrap_err();
+    assert_eq!(e.to_string(), "bad number: invalid digit found in string");
+}
+
+#[test]
+fn from_is_implemented_for_parse_errors() {
+    let inner = "x".parse::<u32>().unwrap_err();
+    let converted: SaveError = inner.clone().into();
+    assert_eq!(converted, SaveError::BadNumber(inner));
+}
+"##,
+        hints: [
+            "Start with the enum, then `impl fmt::Display for SaveError` using `write!(f, …)` inside a `match self`. `impl From<ParseIntError> for SaveError` just wraps the error in the `BadNumber` variant.",
+            "For the parser: `line.split_once('=')` gives an `Option`; `.ok_or_else(|| SaveError::MissingField(…))?` turns `None` into the error. Parsing the level with `?` works because `From<ParseIntError>` exists.",
+            "pub fn parse_save_line(line: &str) -> Result<(String, u32), SaveError> {\n    let (name, level) = line\n        .split_once('=')\n        .ok_or_else(|| SaveError::MissingField(\"separator\".to_string()))?;\n    let name = name.trim();\n    if name.is_empty() {\n        return Err(SaveError::MissingField(\"name\".to_string()));\n    }\n    let level: u32 = level.trim().parse()?;\n    Ok((name.to_string(), level))\n}",
+        ],
+        solution: r##"use std::fmt;
+use std::num::ParseIntError;
+
+#[derive(Debug, PartialEq)]
+pub enum SaveError {
+    MissingField(String),
+    BadNumber(ParseIntError),
+}
+
+impl fmt::Display for SaveError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SaveError::MissingField(name) => write!(f, "missing field: {name}"),
+            SaveError::BadNumber(e) => write!(f, "bad number: {e}"),
+        }
+    }
+}
+
+impl From<ParseIntError> for SaveError {
+    fn from(e: ParseIntError) -> SaveError {
+        SaveError::BadNumber(e)
+    }
+}
+
+pub fn parse_save_line(line: &str) -> Result<(String, u32), SaveError> {
+    let (name, level) = line
+        .split_once('=')
+        .ok_or_else(|| SaveError::MissingField("separator".to_string()))?;
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(SaveError::MissingField("name".to_string()));
+    }
+    let level: u32 = level.trim().parse()?;
+    Ok((name.to_string(), level))
+}
+"##,
+        explanation: "A custom error enum lets callers `match` on *what* went wrong while `Display` gives humans a message. Implementing `From<ParseIntError>` is what makes `?` convert errors automatically: `?` calls `From::from` on the error before returning it. This is the standard shape of error handling in libraries (and what crates like `thiserror` generate for you).",
+        book_links: [
+            (title: "The Rust Book: Propagating Errors", url: "https://doc.rust-lang.org/book/ch09-02-recoverable-errors-with-result.html"),
+            (title: "Rust by Example: Defining an error type", url: "https://doc.rust-lang.org/rust-by-example/error/multiple_error_types/define_error_type.html"),
+        ],
+        prerequisites: ["errors_02_question_mark"],
+        engine_tags: ["save"],
+    ),
+    (
+        id: "errors_04_unwrap_refactor",
+        topic: "errors",
+        kind: Refactor,
+        difficulty: 3,
+        title: "Unwrap Is a Smell",
+        story: "A crash dump from the field: `called Option::unwrap() on a None value`. The loader checks `is_none()` first and then unwraps, which is safe — but it is exactly the pattern that `?` was invented to replace.",
+        task: "Refactor `read_pair` so it contains no `unwrap`, no `return` and no `is_none`/`is_err` checks. Use `?` (and `.ok()` to turn a parse `Result` into an `Option`). Behaviour must stay the same.",
+        signatures: ["pub fn read_pair(text: &str) -> Option<(i32, i32)>"],
+        starter_code: r##"pub fn read_pair(text: &str) -> Option<(i32, i32)> {
+    let mut parts = text.split(',');
+    let first = parts.next();
+    if first.is_none() {
+        return None;
+    }
+    let a = first.unwrap().trim().parse::<i32>();
+    if a.is_err() {
+        return None;
+    }
+    let second = parts.next();
+    if second.is_none() {
+        return None;
+    }
+    let b = second.unwrap().trim().parse::<i32>();
+    if b.is_err() {
+        return None;
+    }
+    Some((a.unwrap(), b.unwrap()))
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn reads_two_integers() {
+    assert_eq!(read_pair("3,4"), Some((3, 4)));
+    assert_eq!(read_pair(" -7 ,  12 "), Some((-7, 12)));
+}
+
+#[test]
+fn extra_parts_are_ignored() {
+    assert_eq!(read_pair("1,2,3"), Some((1, 2)));
+}
+
+#[test]
+fn missing_or_bad_parts_give_none() {
+    assert_eq!(read_pair(""), None);
+    assert_eq!(read_pair("5"), None);
+    assert_eq!(read_pair("x,4"), None);
+    assert_eq!(read_pair("4,y"), None);
+}
+"##,
+        checks: [
+            ForbidWord(word: "unwrap", message: "Remove every `unwrap`: use `?` to leave the function early instead."),
+            ForbidWord(word: "return", message: "You do not need `return`: the `?` operator returns early for you."),
+            ForbidWord(word: "is_none", message: "Use `?` instead of checking `is_none()` by hand."),
+            ForbidWord(word: "is_err", message: "Use `.ok()?` instead of checking `is_err()` by hand."),
+            RequireText(text: "?", message: "Use the `?` operator."),
+        ],
+        hints: [
+            "`?` works on `Option` inside a function that returns `Option`: `None` becomes an early `return None`, `Some(v)` becomes `v`.",
+            "A parse gives a `Result`, not an `Option`. `.ok()` converts `Result<T, E>` into `Option<T>`, so `….parse::<i32>().ok()?` works.",
+            "    let a = parts.next()?.trim().parse::<i32>().ok()?;\n    let b = parts.next()?.trim().parse::<i32>().ok()?;\n    Some((a, b))",
+        ],
+        solution: r##"pub fn read_pair(text: &str) -> Option<(i32, i32)> {
+    let mut parts = text.split(',');
+    let a = parts.next()?.trim().parse::<i32>().ok()?;
+    let b = parts.next()?.trim().parse::<i32>().ok()?;
+    Some((a, b))
+}
+"##,
+        explanation: "Checking `is_none()` and then calling `unwrap()` is correct but noisy, and the compiler cannot see that the unwrap is safe. `?` expresses \"continue with the value, or bail out with the failure\" in four characters, and it removes every panic path from the function. `.ok()` bridges `Result` to `Option` when you do not care why something failed.",
+        book_links: [
+            (title: "The Rust Book: To panic! or Not to panic!", url: "https://doc.rust-lang.org/book/ch09-03-to-panic-or-not-to-panic.html"),
+            (title: "Rust by Example: unpacking options with ?", url: "https://doc.rust-lang.org/rust-by-example/error/option_unwrap/question_mark.html"),
+        ],
+        prerequisites: ["errors_03_save_error_type"],
+        engine_tags: ["save"],
+    ),
+    (
+        id: "errors_05_predict_result",
+        topic: "errors",
+        kind: PredictOutput,
+        difficulty: 2,
+        title: "Collecting Results",
+        story: "The level loader halves every tile coordinate and must stop at the first odd one. A teammate says `collect()` can do that in one line. Check what it really produces.",
+        task: "What does this program print?",
+        explanation: "The first `collect` builds a `Vec<Result<…>>` — one `Result` per input, errors included. The second collects into `Result<Vec<i32>, String>`: iteration stops at the first `Err` and that error becomes the result, discarding the successes. Choosing the collection type is how you pick the behaviour.",
+        solution: "[Ok(2), Err(\"7 is odd\"), Ok(5)]\nErr(\"7 is odd\")",
+        book_links: [
+            (title: "Rust by Example: Iterating over Results", url: "https://doc.rust-lang.org/rust-by-example/error/iter_result.html"),
+        ],
+        prerequisites: ["errors_04_unwrap_refactor"],
+        engine_tags: ["save"],
+        quiz: Some((
+            question: "What does this program print?",
+            code: r##"fn half(n: i32) -> Result<i32, String> {
+    if n % 2 == 0 {
+        Ok(n / 2)
+    } else {
+        Err(format!("{n} is odd"))
+    }
+}
+
+fn main() {
+    let results: Vec<_> = [4, 7, 10].iter().map(|&n| half(n)).collect();
+    println!("{:?}", results);
+    let all: Result<Vec<i32>, String> = [4, 7, 10].iter().map(|&n| half(n)).collect();
+    println!("{:?}", all);
+}"##,
+            options: [
+                "[Ok(2), Err(\"7 is odd\"), Ok(5)]\nErr(\"7 is odd\")",
+                "[Ok(2), Err(\"7 is odd\"), Ok(5)]\nOk([2, 5])",
+                "Err(\"7 is odd\")\nErr(\"7 is odd\")",
+                "[2, 5]\nErr(\"7 is odd\")",
+            ],
+            correct: 0,
+            verify: RunOutput,
+        )),
+    ),
+]

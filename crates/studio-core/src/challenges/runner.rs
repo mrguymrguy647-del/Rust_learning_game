@@ -69,6 +69,14 @@ impl RunnerConfig {
     }
 }
 
+/// Result of compiling (and maybe running) a standalone snippet.
+#[derive(Debug, Clone)]
+pub struct SnippetResult {
+    pub compiled: bool,
+    pub stdout: String,
+    pub diagnostics: String,
+}
+
 pub struct Runner {
     toolchain: Toolchain,
     sandbox: Sandbox,
@@ -128,6 +136,36 @@ impl Runner {
             .env("CARGO_INCREMENTAL", "1")
             .current_dir(self.sandbox.project_dir());
         cmd
+    }
+
+    /// Compile a standalone Rust file with `rustc` and optionally run it (used to verify quizzes).
+    pub fn check_snippet(&self, source: &str, run: bool) -> SnippetResult {
+        let _guard = self.lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let config = self.config();
+        let dir = self.sandbox.snippet_dir();
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            return SnippetResult { compiled: false, stdout: String::new(), diagnostics: format!("cannot create {}: {e}", dir.display()) };
+        }
+        let src = dir.join("snippet.rs");
+        let exe = dir.join(if cfg!(windows) { "snippet.exe" } else { "snippet" });
+        if let Err(e) = std::fs::write(&src, source) {
+            return SnippetResult { compiled: false, stdout: String::new(), diagnostics: e.to_string() };
+        }
+        let _ = std::fs::remove_file(&exe);
+        let rustc = self.toolchain.rustc_path();
+        let mut cmd = self.command(rustc);
+        cmd.args(["--edition", "2021", "--color", "never", "-A", "warnings", "-o"]).arg(&exe).arg(&src).current_dir(&dir);
+        let never = AtomicBool::new(false);
+        let compiled = run_limited(cmd, &Limits::new(config.compile_timeout, config.output_limit), &never);
+        if !compiled.success() {
+            return SnippetResult { compiled: false, stdout: String::new(), diagnostics: format!("{}{}", compiled.stdout, compiled.stderr) };
+        }
+        if !run {
+            return SnippetResult { compiled: true, stdout: String::new(), diagnostics: String::new() };
+        }
+        let run_cmd = self.command(&exe);
+        let ran = run_limited(run_cmd, &Limits::for_player_code(config.test_timeout, config.output_limit), &never);
+        SnippetResult { compiled: true, stdout: ran.stdout, diagnostics: ran.stderr }
     }
 
     /// Build the (tiny) project once so the first real check is quick.

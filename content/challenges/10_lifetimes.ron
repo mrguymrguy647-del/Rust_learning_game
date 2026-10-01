@@ -1,0 +1,251 @@
+// Topic 10: Lifetimes — "Zero-copy parsers & level loaders"
+[
+    (
+        id: "lifetimes_01_longer_name",
+        topic: "lifetimes",
+        kind: FixCompile,
+        difficulty: 2,
+        title: "The Longer Name Wins",
+        story: "The leaderboard shows the longer of two player names in the banner. The function just hands back one of its arguments — and the compiler can't tell which one the result belongs to.",
+        task: "Fix the compile error so `pick_longer` returns the longer of the two names (the first one on a tie).",
+        signatures: ["pub fn pick_longer(a: &str, b: &str) -> &str"],
+        starter_code: r##"pub fn pick_longer(a: &str, b: &str) -> &str {
+    if a.len() >= b.len() {
+        a
+    } else {
+        b
+    }
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn returns_the_longer_name() {
+    assert_eq!(pick_longer("Ada", "Grace"), "Grace");
+    assert_eq!(pick_longer("Margaret", "Linus"), "Margaret");
+}
+
+#[test]
+fn first_wins_ties() {
+    assert_eq!(pick_longer("abc", "xyz"), "abc");
+}
+
+#[test]
+fn result_can_outlive_one_argument_scope() {
+    let banner;
+    let first = String::from("Rustacean");
+    {
+        let second = String::from("Ferris");
+        banner = pick_longer(&first, &second).to_string();
+    }
+    assert_eq!(banner, "Rustacean");
+}
+"##,
+        hints: [
+            "With two reference parameters the compiler cannot guess which one the returned reference borrows from. You have to tell it with a lifetime parameter.",
+            "Declare a lifetime after the function name — `<'a>` — and put it on the references that are related: the parameters you might return and the return type.",
+            "pub fn pick_longer<'a>(a: &'a str, b: &'a str) -> &'a str {\n    // body unchanged\n}",
+        ],
+        solution: r##"pub fn pick_longer<'a>(a: &'a str, b: &'a str) -> &'a str {
+    if a.len() >= b.len() {
+        a
+    } else {
+        b
+    }
+}
+"##,
+        explanation: "Lifetime annotations do not change how long anything lives — they describe how the lifetimes of references RELATE, so the compiler can check every caller. `<'a>` on `a`, `b` and the result says: \"the returned reference is valid for no longer than BOTH inputs\". The compiler picks the shorter of the two at each call site and refuses to compile any use of the result after that. With a single reference parameter the compiler fills this in for you (lifetime elision).",
+        book_links: [
+            (title: "The Rust Book: Validating References with Lifetimes", url: "https://doc.rust-lang.org/book/ch10-03-lifetime-syntax.html"),
+            (title: "Rust by Example: Lifetimes", url: "https://doc.rust-lang.org/rust-by-example/scope/lifetime.html"),
+        ],
+        prerequisites: [],
+        engine_tags: ["parsing", "ui"],
+    ),
+    (
+        id: "lifetimes_02_tokens",
+        topic: "lifetimes",
+        kind: FromScratch,
+        difficulty: 3,
+        title: "Zero-Copy Command Tokens",
+        story: "The dialogue engine parses thousands of script lines per frame. Allocating a `String` per word would thrash the allocator, so tokens must simply POINT INTO the original script text.",
+        task: "Write `struct Token<'a> { pub text: &'a str, pub line: usize }` and `tokenize`, which splits the source into whitespace-separated words. `line` is 1-based. Tokens must borrow from `src` — no allocation per word.",
+        signatures: [
+            "pub struct Token<'a> { pub text: &'a str, pub line: usize }",
+            "pub fn tokenize(src: &str) -> Vec<Token<'_>>",
+        ],
+        starter_code: "// Write `Token` and `tokenize` here.\n",
+        hidden_tests: r##"
+#[test]
+fn splits_words_and_numbers_lines() {
+    let tokens = tokenize("go north\nlook\n\ntake   lamp");
+    let words: Vec<&str> = tokens.iter().map(|t| t.text).collect();
+    let lines: Vec<usize> = tokens.iter().map(|t| t.line).collect();
+    assert_eq!(words, vec!["go", "north", "look", "take", "lamp"]);
+    assert_eq!(lines, vec![1, 1, 2, 4, 4]);
+}
+
+#[test]
+fn empty_source_has_no_tokens() {
+    assert!(tokenize("").is_empty());
+    assert!(tokenize("   \n  \n").is_empty());
+}
+
+#[test]
+fn tokens_point_into_the_source() {
+    let src = String::from("alpha beta");
+    let tokens = tokenize(&src);
+    assert_eq!(tokens.len(), 2);
+    // Zero-copy: the first token starts exactly where the source starts.
+    assert_eq!(tokens[0].text.as_ptr(), src.as_ptr());
+    assert_eq!(tokens[1].text.as_ptr(), src[6..].as_ptr());
+}
+
+#[test]
+fn tokens_can_outlive_the_function_call() {
+    let script = String::from("a b c");
+    let first;
+    {
+        let tokens = tokenize(&script);
+        first = tokens[0].text;
+    }
+    assert_eq!(first, "a");
+}
+"##,
+        hints: [
+            "A struct that stores a reference needs a lifetime parameter: `struct Token<'a> { text: &'a str, … }`. It says \"a Token cannot outlive the text it points into\".",
+            "`str::lines()` gives lines without copying; `enumerate()` numbers them from 0; `split_whitespace()` yields `&str` slices of each line. All of them borrow from the original string.",
+            "pub fn tokenize(src: &str) -> Vec<Token<'_>> {\n    let mut out = Vec::new();\n    for (i, line) in src.lines().enumerate() {\n        for word in line.split_whitespace() {\n            out.push(Token { text: word, line: i + 1 });\n        }\n    }\n    out\n}",
+        ],
+        solution: r##"pub struct Token<'a> {
+    pub text: &'a str,
+    pub line: usize,
+}
+
+pub fn tokenize(src: &str) -> Vec<Token<'_>> {
+    let mut out = Vec::new();
+    for (i, line) in src.lines().enumerate() {
+        for word in line.split_whitespace() {
+            out.push(Token { text: word, line: i + 1 });
+        }
+    }
+    out
+}
+"##,
+        explanation: "A struct that holds a reference must name the lifetime of that reference: `Token<'a>` cannot outlive the `&'a str` it points into, and the compiler enforces it everywhere a token is used. In return you get zero-copy parsing — each token is just a pointer and a length into the original text. The function signature `tokenize(src: &str) -> Vec<Token<'_>>` uses the anonymous lifetime `'_` to say \"the tokens borrow from `src`\".",
+        book_links: [
+            (title: "The Rust Book: Lifetime Annotations in Struct Definitions", url: "https://doc.rust-lang.org/book/ch10-03-lifetime-syntax.html"),
+            (title: "Rust by Example: Structs and Lifetimes", url: "https://doc.rust-lang.org/rust-by-example/scope/lifetime/struct.html"),
+        ],
+        prerequisites: ["lifetimes_01_longer_name"],
+        engine_tags: ["parsing", "dialogue"],
+    ),
+    (
+        id: "lifetimes_03_review_dangling",
+        topic: "lifetimes",
+        kind: CodeReview,
+        difficulty: 3,
+        title: "Review: Dangling References",
+        story: "A level loader PR adds four small helper functions. One of them hands out a reference to something that dies when the function returns — the kind of bug that C++ ships to production and Rust catches at compile time.",
+        task: "Which function does NOT compile?",
+        explanation: "`make_label` builds a `String` inside the function and returns a reference to it — but the `String` is dropped when the function ends, so the reference would dangle (E0515: cannot return reference to local variable). Returning `&'static str` literals, slices of an argument, or elements of a borrowed slice is fine, because the data outlives the function call. The fix is to return the owned `String` itself.",
+        solution: "Option B: `make_label` returns a reference to the local `String` `s`, which is dropped when the function returns.",
+        book_links: [
+            (title: "The Rust Book: Preventing Dangling References with Lifetimes", url: "https://doc.rust-lang.org/book/ch10-03-lifetime-syntax.html"),
+            (title: "The Rust Book: References and Borrowing", url: "https://doc.rust-lang.org/book/ch04-02-references-and-borrowing.html"),
+        ],
+        prerequisites: ["lifetimes_02_tokens"],
+        engine_tags: ["parsing", "assets"],
+        quiz: Some((
+            question: "Which function does NOT compile?",
+            code: "",
+            options_are_code: true,
+            options: [
+                "fn first_name(names: &[String]) -> &str {\n    &names[0]\n}",
+                "fn make_label() -> &'static str {\n    let s = String::from(\"level-1\");\n    &s\n}",
+                "fn default_label() -> &'static str {\n    \"untitled\"\n}",
+                "fn extension(file: &str) -> &str {\n    &file[file.len() - 3..]\n}",
+            ],
+            correct: 1,
+            verify: OnlyCorrectFailsToCompile,
+            wrapper: "{CODE}\n\nfn main() {}\n",
+        )),
+    ),
+    (
+        id: "lifetimes_04_zero_copy_header",
+        topic: "lifetimes",
+        kind: Refactor,
+        difficulty: 4,
+        title: "Stop Copying the Header",
+        story: "Profiling the level loader shows 40% of its time inside the allocator: every `key = value` header line is copied into two fresh `String`s that live exactly as long as the line they came from.",
+        task: "Refactor `Header` and `parse_header` to borrow from the input line instead of owning copies: no `String`, no `.to_string()`/`.to_owned()`. Behaviour must stay the same.",
+        signatures: [
+            "pub struct Header { pub name: String, pub value: String }",
+            "pub fn parse_header(line: &str) -> Option<Header>",
+        ],
+        starter_code: r##"pub struct Header {
+    pub name: String,
+    pub value: String,
+}
+
+pub fn parse_header(line: &str) -> Option<Header> {
+    let (name, value) = line.split_once('=')?;
+    Some(Header {
+        name: name.trim().to_string(),
+        value: value.trim().to_string(),
+    })
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn parses_key_value_lines() {
+    let h = parse_header("level = forest ").unwrap();
+    assert_eq!(h.name, "level");
+    assert_eq!(h.value, "forest");
+}
+
+#[test]
+fn lines_without_equals_are_rejected() {
+    assert!(parse_header("no separator here").is_none());
+    assert!(parse_header("").is_none());
+}
+
+#[test]
+fn value_may_contain_equals() {
+    let h = parse_header("formula=a=b").unwrap();
+    assert_eq!(h.name, "formula");
+    assert_eq!(h.value, "a=b");
+}
+"##,
+        checks: [
+            ForbidWord(word: "String", message: "The header should not own any `String`: store `&'a str` slices that borrow from the input line."),
+            ForbidText(text: ".to_string()", message: "`.to_string()` allocates a copy. Keep the `&str` slices as they are."),
+            ForbidText(text: ".to_owned()", message: "`.to_owned()` allocates a copy. Keep the `&str` slices as they are."),
+            RequireText(text: "'a", message: "`Header` now holds references, so it needs a lifetime parameter like `Header<'a>`."),
+        ],
+        hints: [
+            "If a struct stores `&str` it needs a lifetime parameter: `struct Header<'a> { name: &'a str, … }`.",
+            "`trim()` and `split_once` already return slices of the original line. Just don't convert them into `String`s.",
+            "pub struct Header<'a> {\n    pub name: &'a str,\n    pub value: &'a str,\n}\n\npub fn parse_header(line: &str) -> Option<Header<'_>> {\n    let (name, value) = line.split_once('=')?;\n    Some(Header { name: name.trim(), value: value.trim() })\n}",
+        ],
+        solution: r##"pub struct Header<'a> {
+    pub name: &'a str,
+    pub value: &'a str,
+}
+
+pub fn parse_header(line: &str) -> Option<Header<'_>> {
+    let (name, value) = line.split_once('=')?;
+    Some(Header {
+        name: name.trim(),
+        value: value.trim(),
+    })
+}
+"##,
+        explanation: "Owning data (`String`) is simple but costs an allocation and a copy. When the data already lives somewhere else for long enough — here, the line being parsed — a struct can just borrow it. The lifetime parameter `'a` ties each `Header` to the line it was cut from, so the compiler guarantees you never use a header after its source is gone. This \"parse into borrowed views\" pattern is how fast parsers (serde, nom, …) avoid allocating.",
+        book_links: [
+            (title: "The Rust Book: Lifetime Annotations in Struct Definitions", url: "https://doc.rust-lang.org/book/ch10-03-lifetime-syntax.html"),
+            (title: "The Rust Book: The Slice Type", url: "https://doc.rust-lang.org/book/ch04-03-slices.html"),
+        ],
+        prerequisites: ["lifetimes_03_review_dangling"],
+        engine_tags: ["parsing", "assets"],
+    ),
+]

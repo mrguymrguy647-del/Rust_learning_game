@@ -1,0 +1,414 @@
+// Topic 7: Collections — "Inventory, leaderboards, event queue"
+[
+    (
+        id: "collections_01_inventory_counts",
+        topic: "collections",
+        kind: Complete,
+        difficulty: 2,
+        title: "What's in the Bag?",
+        story: "The inventory screen receives a flat list of picked-up item names and needs to show \"3× potion, 1× sword\". It also highlights the item you carry the most of.",
+        task: "Complete `count_items` (item name → how many times it appears) and `most_common` (the name with the highest count; ties go to the alphabetically first name; empty map → `None`).",
+        signatures: [
+            "pub fn count_items(items: &[&str]) -> HashMap<String, u32>",
+            "pub fn most_common(counts: &HashMap<String, u32>) -> Option<String>",
+        ],
+        starter_code: r##"use std::collections::HashMap;
+
+pub fn count_items(items: &[&str]) -> HashMap<String, u32> {
+    todo!()
+}
+
+pub fn most_common(counts: &HashMap<String, u32>) -> Option<String> {
+    todo!()
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn counts_each_item() {
+    let counts = count_items(&["potion", "sword", "potion", "potion", "shield"]);
+    assert_eq!(counts.len(), 3);
+    assert_eq!(counts["potion"], 3);
+    assert_eq!(counts["sword"], 1);
+    assert_eq!(counts["shield"], 1);
+}
+
+#[test]
+fn no_items_no_counts() {
+    assert!(count_items(&[]).is_empty());
+    assert_eq!(most_common(&count_items(&[])), None);
+}
+
+#[test]
+fn most_common_item() {
+    let counts = count_items(&["a", "b", "b", "c", "b", "a"]);
+    assert_eq!(most_common(&counts), Some("b".to_string()));
+}
+
+#[test]
+fn ties_go_to_the_alphabetically_first_name() {
+    let counts = count_items(&["zeta", "alpha", "zeta", "alpha", "mid"]);
+    assert_eq!(most_common(&counts), Some("alpha".to_string()));
+}
+"##,
+        hints: [
+            "`HashMap::entry(key).or_insert(0)` gives you a mutable reference to the count, creating it with 0 the first time. Dereference it with `*` to add one.",
+            "For `most_common` iterate with `counts.iter()` and use `max_by` with a comparison on the count — then break ties by comparing the names in the *reverse* direction so the smaller name wins.",
+            "pub fn count_items(items: &[&str]) -> HashMap<String, u32> {\n    let mut counts = HashMap::new();\n    for item in items {\n        *counts.entry(item.to_string()).or_insert(0) += 1;\n    }\n    counts\n}",
+        ],
+        solution: r##"use std::collections::HashMap;
+
+pub fn count_items(items: &[&str]) -> HashMap<String, u32> {
+    let mut counts = HashMap::new();
+    for item in items {
+        *counts.entry(item.to_string()).or_insert(0) += 1;
+    }
+    counts
+}
+
+pub fn most_common(counts: &HashMap<String, u32>) -> Option<String> {
+    counts
+        .iter()
+        .max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(a.0)))
+        .map(|(name, _)| name.clone())
+}
+"##,
+        explanation: "The `entry` API is the idiomatic way to update a `HashMap` — one lookup, no double hashing, no `if contains_key` dance. Remember that HashMap iteration order is unspecified: whenever the result must be deterministic (as with ties here), define the order yourself with an explicit comparison.",
+        book_links: [
+            (title: "The Rust Book: Storing Keys with Associated Values in Hash Maps", url: "https://doc.rust-lang.org/book/ch08-03-hash-maps.html"),
+            (title: "Rust by Example: HashMap", url: "https://doc.rust-lang.org/rust-by-example/std/hash.html"),
+        ],
+        prerequisites: [],
+        engine_tags: ["inventory"],
+    ),
+    (
+        id: "collections_02_leaderboard",
+        topic: "collections",
+        kind: FromScratch,
+        difficulty: 3,
+        title: "The Hall of Fame",
+        story: "The online leaderboard keeps only each player's BEST score and shows the top N. Ties are shown alphabetically so the list never jumps around between refreshes.",
+        task: "Write a `Leaderboard` type. `Leaderboard::new()` creates an empty board. `add(name, score)` records a score but keeps only the player's highest. `top(n)` returns up to `n` entries as `(name, score)` sorted by score descending, then name ascending.",
+        signatures: [
+            "Leaderboard::new() -> Leaderboard",
+            "pub fn add(&mut self, name: &str, score: u32)",
+            "pub fn top(&self, n: usize) -> Vec<(String, u32)>",
+        ],
+        starter_code: r##"// Write `Leaderboard` here.
+"##,
+        hidden_tests: r##"
+#[test]
+fn an_empty_board_has_no_entries() {
+    let board = Leaderboard::new();
+    assert!(board.top(10).is_empty());
+}
+
+#[test]
+fn entries_are_sorted_by_score_descending() {
+    let mut board = Leaderboard::new();
+    board.add("ada", 50);
+    board.add("grace", 90);
+    board.add("linus", 70);
+    assert_eq!(
+        board.top(3),
+        vec![("grace".to_string(), 90), ("linus".to_string(), 70), ("ada".to_string(), 50)]
+    );
+}
+
+#[test]
+fn only_the_best_score_per_player_counts() {
+    let mut board = Leaderboard::new();
+    board.add("ada", 50);
+    board.add("ada", 80);
+    board.add("ada", 20);
+    assert_eq!(board.top(5), vec![("ada".to_string(), 80)]);
+}
+
+#[test]
+fn top_n_truncates_and_ties_are_alphabetical() {
+    let mut board = Leaderboard::new();
+    for (name, score) in [("zed", 10), ("amy", 10), ("bob", 10), ("cat", 99)] {
+        board.add(name, score);
+    }
+    assert_eq!(
+        board.top(3),
+        vec![("cat".to_string(), 99), ("amy".to_string(), 10), ("bob".to_string(), 10)]
+    );
+    assert_eq!(board.top(0), vec![]);
+}
+"##,
+        hints: [
+            "A `HashMap<String, u32>` inside the struct maps each player to their best score. The `entry` API plus `max` is a neat way to keep only the highest.",
+            "For `top`, collect the map into a `Vec<(String, u32)>`, then `sort_by` with a comparison that puts higher scores first and falls back to the name: `b.1.cmp(&a.1).then(a.0.cmp(&b.0))`. Finally `truncate(n)`.",
+            "pub struct Leaderboard {\n    best: HashMap<String, u32>,\n}\n\nimpl Leaderboard {\n    pub fn new() -> Leaderboard { Leaderboard { best: HashMap::new() } }\n    pub fn add(&mut self, name: &str, score: u32) {\n        let entry = self.best.entry(name.to_string()).or_insert(score);\n        // keep the maximum\n    }\n    // top …\n}",
+        ],
+        solution: r##"use std::collections::HashMap;
+
+pub struct Leaderboard {
+    best: HashMap<String, u32>,
+}
+
+impl Leaderboard {
+    pub fn new() -> Leaderboard {
+        Leaderboard { best: HashMap::new() }
+    }
+
+    pub fn add(&mut self, name: &str, score: u32) {
+        let entry = self.best.entry(name.to_string()).or_insert(score);
+        if score > *entry {
+            *entry = score;
+        }
+    }
+
+    pub fn top(&self, n: usize) -> Vec<(String, u32)> {
+        let mut entries: Vec<(String, u32)> = self.best.iter().map(|(k, v)| (k.clone(), *v)).collect();
+        entries.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        entries.truncate(n);
+        entries
+    }
+}
+"##,
+        explanation: "A `HashMap` gives O(1) updates; sorting only happens when the top list is requested. Because hash maps iterate in arbitrary order, `sort_by` with a total order (score, then name) makes the output deterministic. `Vec::truncate` cheaply drops the entries you do not need.",
+        book_links: [
+            (title: "The Rust Book: Hash Maps", url: "https://doc.rust-lang.org/book/ch08-03-hash-maps.html"),
+            (title: "The Rust Book: Vectors", url: "https://doc.rust-lang.org/book/ch08-01-vectors.html"),
+        ],
+        prerequisites: ["collections_01_inventory_counts"],
+        engine_tags: ["inventory"],
+    ),
+    (
+        id: "collections_03_event_queue",
+        topic: "collections",
+        kind: Complete,
+        difficulty: 3,
+        title: "The Event Queue",
+        story: "Game events (\"door opened\", \"enemy spawned\") are processed in the order they arrive — except urgent ones, which jump the queue. Popping from the front of a `Vec` is slow; this is the job for a `VecDeque`.",
+        task: "Complete `EventQueue`: `push` adds to the back, `push_urgent` adds to the front, `pop` removes from the front, `len` counts events and `drain_all` empties the queue returning everything in processing order.",
+        signatures: [
+            "pub fn new() -> EventQueue",
+            "pub fn push(&mut self, event: &str)",
+            "pub fn push_urgent(&mut self, event: &str)",
+            "pub fn pop(&mut self) -> Option<String>",
+            "pub fn len(&self) -> usize",
+            "pub fn drain_all(&mut self) -> Vec<String>",
+        ],
+        starter_code: r##"use std::collections::VecDeque;
+
+pub struct EventQueue {
+    events: VecDeque<String>,
+}
+
+impl EventQueue {
+    pub fn new() -> EventQueue {
+        todo!()
+    }
+
+    pub fn push(&mut self, event: &str) {
+        todo!()
+    }
+
+    pub fn push_urgent(&mut self, event: &str) {
+        todo!()
+    }
+
+    pub fn pop(&mut self) -> Option<String> {
+        todo!()
+    }
+
+    pub fn len(&self) -> usize {
+        todo!()
+    }
+
+    pub fn drain_all(&mut self) -> Vec<String> {
+        todo!()
+    }
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn events_are_first_in_first_out() {
+    let mut q = EventQueue::new();
+    q.push("spawn");
+    q.push("open door");
+    q.push("explosion");
+    assert_eq!(q.len(), 3);
+    assert_eq!(q.pop(), Some("spawn".to_string()));
+    assert_eq!(q.pop(), Some("open door".to_string()));
+    assert_eq!(q.len(), 1);
+}
+
+#[test]
+fn urgent_events_jump_the_queue() {
+    let mut q = EventQueue::new();
+    q.push("a");
+    q.push("b");
+    q.push_urgent("fire!");
+    assert_eq!(q.pop(), Some("fire!".to_string()));
+    assert_eq!(q.pop(), Some("a".to_string()));
+}
+
+#[test]
+fn an_empty_queue_pops_none() {
+    let mut q = EventQueue::new();
+    assert_eq!(q.pop(), None);
+    assert_eq!(q.len(), 0);
+}
+
+#[test]
+fn draining_returns_everything_in_order_and_empties_the_queue() {
+    let mut q = EventQueue::new();
+    q.push("one");
+    q.push("two");
+    q.push_urgent("zero");
+    assert_eq!(q.drain_all(), vec!["zero", "one", "two"]);
+    assert_eq!(q.len(), 0);
+    assert!(q.drain_all().is_empty());
+}
+"##,
+        hints: [
+            "`VecDeque` is a double-ended queue: `push_back`/`pop_front` work on opposite ends and are both O(1).",
+            "`push` → `push_back`, `push_urgent` → `push_front`, `pop` → `pop_front`. For `drain_all`, `self.events.drain(..)` yields every element in order and leaves the deque empty.",
+            "    pub fn push_urgent(&mut self, event: &str) {\n        self.events.push_front(event.to_string());\n    }\n    pub fn drain_all(&mut self) -> Vec<String> {\n        self.events.drain(..).collect()\n    }",
+        ],
+        solution: r##"use std::collections::VecDeque;
+
+pub struct EventQueue {
+    events: VecDeque<String>,
+}
+
+impl EventQueue {
+    pub fn new() -> EventQueue {
+        EventQueue { events: VecDeque::new() }
+    }
+
+    pub fn push(&mut self, event: &str) {
+        self.events.push_back(event.to_string());
+    }
+
+    pub fn push_urgent(&mut self, event: &str) {
+        self.events.push_front(event.to_string());
+    }
+
+    pub fn pop(&mut self) -> Option<String> {
+        self.events.pop_front()
+    }
+
+    pub fn len(&self) -> usize {
+        self.events.len()
+    }
+
+    pub fn drain_all(&mut self) -> Vec<String> {
+        self.events.drain(..).collect()
+    }
+}
+"##,
+        explanation: "A `Vec` is great at the back, but removing from the front shifts every element (O(n)). `VecDeque` is a ring buffer: both ends are O(1), which makes it the right type for queues, undo history and sliding windows. `drain(..)` removes a range and yields the removed items — here the whole queue.",
+        book_links: [
+            (title: "The Rust Book: Common Collections", url: "https://doc.rust-lang.org/book/ch08-00-common-collections.html"),
+        ],
+        prerequisites: ["collections_02_leaderboard"],
+        engine_tags: ["inventory"],
+    ),
+    (
+        id: "collections_04_dedupe_perf",
+        topic: "collections",
+        kind: Performance,
+        difficulty: 3,
+        title: "Ten Thousand Duplicate Pickups",
+        story: "The multiplayer server receives item IDs from many clients and must remove duplicates while keeping the order of first appearance. The current code is fine in testing and melts the server in production with 100,000+ IDs per tick.",
+        task: "Make `dedupe_ids` fast: it must finish 200,000 ids in well under half a second. Keep the order of first appearance.",
+        signatures: ["pub fn dedupe_ids(ids: &[u32]) -> Vec<u32>"],
+        starter_code: r##"pub fn dedupe_ids(ids: &[u32]) -> Vec<u32> {
+    let mut out = Vec::new();
+    for id in ids {
+        if !out.contains(id) {
+            out.push(*id);
+        }
+    }
+    out
+}
+"##,
+        hidden_tests: r##"
+use std::collections::HashSet;
+use std::time::Instant;
+
+#[test]
+fn keeps_first_occurrences_in_order() {
+    assert_eq!(dedupe_ids(&[3, 1, 3, 2, 1, 4]), vec![3, 1, 2, 4]);
+    assert_eq!(dedupe_ids(&[]), Vec::<u32>::new());
+    assert_eq!(dedupe_ids(&[7, 7, 7]), vec![7]);
+}
+
+#[test]
+fn large_inputs_finish_quickly() {
+    // Deterministic pseudo-random ids with many duplicates.
+    let mut x: u64 = 12345;
+    let ids: Vec<u32> = (0..200_000)
+        .map(|_| {
+            x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((x >> 33) % 100_000) as u32
+        })
+        .collect();
+
+    let start = Instant::now();
+    let result = dedupe_ids(&ids);
+    let elapsed = start.elapsed();
+
+    // Reference answer computed the fast way.
+    let mut seen = HashSet::new();
+    let expected: Vec<u32> = ids.iter().copied().filter(|id| seen.insert(*id)).collect();
+    assert_eq!(result, expected);
+    assert!(elapsed.as_millis() < 300, "took {} ms, expected well under 300 ms", elapsed.as_millis());
+}
+"##,
+        hints: [
+            "`Vec::contains` scans the whole vector, so checking every id costs O(n²) overall. You need a data structure with fast membership tests.",
+            "A `HashSet` answers \"have I seen this?\" in O(1) on average. `HashSet::insert` returns `true` only when the value was NEW — perfect as a filter.",
+            "use std::collections::HashSet;\n\npub fn dedupe_ids(ids: &[u32]) -> Vec<u32> {\n    let mut seen = HashSet::new();\n    ids.iter().copied().filter(|id| seen.insert(*id)).collect()\n}",
+        ],
+        solution: r##"use std::collections::HashSet;
+
+pub fn dedupe_ids(ids: &[u32]) -> Vec<u32> {
+    let mut seen = HashSet::new();
+    ids.iter().copied().filter(|id| seen.insert(*id)).collect()
+}
+"##,
+        explanation: "Complexity matters more than micro-optimisations. `Vec::contains` is O(n), so deduplicating with it is O(n²): 200,000 ids means billions of comparisons. A `HashSet` makes each membership test O(1) on average, turning the whole job into O(n). `insert` returning a `bool` lets the check and the bookkeeping happen in one call.",
+        book_links: [
+            (title: "Rust by Example: HashSet", url: "https://doc.rust-lang.org/rust-by-example/std/hash/hashset.html"),
+            (title: "The Rust Book: Hash Maps", url: "https://doc.rust-lang.org/book/ch08-03-hash-maps.html"),
+        ],
+        prerequisites: ["collections_03_event_queue"],
+        engine_tags: ["inventory"],
+        test_timeout_secs: Some(30),
+    ),
+    (
+        id: "collections_05_review_counting",
+        topic: "collections",
+        kind: CodeReview,
+        difficulty: 2,
+        title: "Review: Counting Words",
+        story: "Four implementations of \"increment the counter for this word\" were submitted for the chat filter. One of them was never compiled before being pushed.",
+        task: "Which snippet does NOT compile?",
+        explanation: "`HashMap::get` returns an `Option<&V>` — a shared reference you cannot add to. To change a value you need `get_mut`, or the `entry` API, which gives a `&mut V` directly. `entry(w).or_insert(0)` is the idiomatic choice: one lookup, and the missing-key case handled for you.",
+        solution: "Option B: `map.get(w)` returns an `Option<&u32>`, which cannot be incremented with `+= 1`.",
+        book_links: [
+            (title: "The Rust Book: Updating a Hash Map", url: "https://doc.rust-lang.org/book/ch08-03-hash-maps.html"),
+        ],
+        prerequisites: ["collections_04_dedupe_perf"],
+        engine_tags: ["inventory"],
+        quiz: Some((
+            question: "Which snippet does NOT compile?",
+            code: "",
+            options_are_code: true,
+            options: [
+                "*map.entry(w).or_insert(0) += 1;",
+                "map.get(w) += 1;",
+                "let c = map.entry(w).or_insert(0);\n*c += 1;",
+                "if let Some(c) = map.get_mut(w) {\n    *c += 1;\n} else {\n    map.insert(w, 1);\n}",
+            ],
+            correct: 1,
+            verify: OnlyCorrectFailsToCompile,
+            wrapper: "use std::collections::HashMap;\nfn main() {\n    let mut map: HashMap<&str, u32> = HashMap::new();\n    for w in [\"a\", \"b\", \"a\"] {\n{CODE}\n    }\n}\n",
+        )),
+    ),
+]

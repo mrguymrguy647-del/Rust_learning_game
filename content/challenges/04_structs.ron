@@ -1,0 +1,404 @@
+// Topic 4: Structs & Methods — "Entities: Player, Enemy, Item"
+[
+    (
+        id: "structs_01_player_struct",
+        topic: "structs",
+        kind: Complete,
+        difficulty: 1,
+        title: "Meet the Player",
+        story: "Until now the player was three loose variables. The new entity system wants a real `Player` type with behaviour attached to it.",
+        task: "Implement the three methods. `new` creates a player with 100 health and 0 score. `take_damage` lowers health but never below zero. `is_alive` is true while health is above zero.",
+        signatures: [
+            "pub fn new(name: &str) -> Player",
+            "pub fn take_damage(&mut self, amount: i32)",
+            "pub fn is_alive(&self) -> bool",
+        ],
+        starter_code: r##"pub struct Player {
+    pub name: String,
+    pub health: i32,
+    pub score: u32,
+}
+
+impl Player {
+    pub fn new(name: &str) -> Player {
+        todo!()
+    }
+
+    pub fn take_damage(&mut self, amount: i32) {
+        todo!()
+    }
+
+    pub fn is_alive(&self) -> bool {
+        todo!()
+    }
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn new_players_start_healthy() {
+    let p = Player::new("Ferris");
+    assert_eq!(p.name, "Ferris");
+    assert_eq!(p.health, 100);
+    assert_eq!(p.score, 0);
+    assert!(p.is_alive());
+}
+
+#[test]
+fn damage_reduces_health() {
+    let mut p = Player::new("Ferris");
+    p.take_damage(30);
+    assert_eq!(p.health, 70);
+    p.take_damage(30);
+    assert_eq!(p.health, 40);
+}
+
+#[test]
+fn health_never_goes_below_zero() {
+    let mut p = Player::new("Ferris");
+    p.take_damage(250);
+    assert_eq!(p.health, 0);
+    assert!(!p.is_alive());
+}
+"##,
+        hints: [
+            "A struct literal looks like `Player { name: …, health: …, score: … }`. `name` is a `&str` parameter but the field is a `String`, so you need to convert it.",
+            "`self.health -= amount` changes the field through `&mut self`. To stop at zero, compare or use `max(0)` on the result. `is_alive` can simply return a comparison.",
+            "pub fn new(name: &str) -> Player {\n    Player { name: name.to_string(), health: 100, score: 0 }\n}\n\npub fn take_damage(&mut self, amount: i32) {\n    self.health = (self.health - amount).max(0);\n}",
+        ],
+        solution: r##"pub struct Player {
+    pub name: String,
+    pub health: i32,
+    pub score: u32,
+}
+
+impl Player {
+    pub fn new(name: &str) -> Player {
+        Player { name: name.to_string(), health: 100, score: 0 }
+    }
+
+    pub fn take_damage(&mut self, amount: i32) {
+        self.health = (self.health - amount).max(0);
+    }
+
+    pub fn is_alive(&self) -> bool {
+        self.health > 0
+    }
+}
+"##,
+        explanation: "A `struct` groups related data; an `impl` block attaches functions to it. `new` is an *associated function* (no `self`) — Rust has no constructors, by convention it is called `new`. Methods take `&self` to read and `&mut self` to modify the value they are called on. The `self` parameter is just sugar for the receiver's type.",
+        book_links: [
+            (title: "The Rust Book: Defining Structs", url: "https://doc.rust-lang.org/book/ch05-01-defining-structs.html"),
+            (title: "The Rust Book: Method Syntax", url: "https://doc.rust-lang.org/book/ch05-03-method-syntax.html"),
+        ],
+        prerequisites: [],
+        engine_tags: ["entities"],
+    ),
+    (
+        id: "structs_02_item_stack",
+        topic: "structs",
+        kind: FixCompile,
+        difficulty: 2,
+        title: "The Locked Stack",
+        story: "Picking up potions should add them to the stack, but the build breaks with a complaint about borrowing a variable as mutable that was never declared mutable.",
+        task: "Fix the compile error. `pick_up_potions` must return a stack of 5 potions (it starts with 2 and picks up 3 more).",
+        signatures: ["pub fn pick_up_potions() -> ItemStack"],
+        starter_code: r##"pub struct ItemStack {
+    pub name: String,
+    pub count: u32,
+}
+
+impl ItemStack {
+    pub fn new(name: &str, count: u32) -> ItemStack {
+        ItemStack { name: name.to_string(), count }
+    }
+
+    pub fn add(&mut self, amount: u32) {
+        self.count += amount;
+    }
+}
+
+pub fn pick_up_potions() -> ItemStack {
+    let stack = ItemStack::new("potion", 2);
+    stack.add(3);
+    stack
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn picking_up_potions_adds_to_the_stack() {
+    let stack = pick_up_potions();
+    assert_eq!(stack.name, "potion");
+    assert_eq!(stack.count, 5);
+}
+
+#[test]
+fn add_works_on_mutable_stacks() {
+    let mut s = ItemStack::new("arrow", 10);
+    s.add(5);
+    s.add(1);
+    assert_eq!(s.count, 16);
+}
+"##,
+        hints: [
+            "`stack.add(3)` needs to modify `stack`, because `add` takes `&mut self`. A variable must be declared mutable before you can call such a method on it.",
+            "Add `mut` to the binding: `let mut stack = …`.",
+            "    let mut stack = ItemStack::new(\"potion\", 2);",
+        ],
+        solution: r##"pub struct ItemStack {
+    pub name: String,
+    pub count: u32,
+}
+
+impl ItemStack {
+    pub fn new(name: &str, count: u32) -> ItemStack {
+        ItemStack { name: name.to_string(), count }
+    }
+
+    pub fn add(&mut self, amount: u32) {
+        self.count += amount;
+    }
+}
+
+pub fn pick_up_potions() -> ItemStack {
+    let mut stack = ItemStack::new("potion", 2);
+    stack.add(3);
+    stack
+}
+"##,
+        explanation: "A method taking `&mut self` can only be called on a value you are allowed to mutate: a `let mut` binding or a `&mut` reference. The error (E0596, \"cannot borrow as mutable\") tells you the *caller* is missing `mut`, not that the method is wrong. Mutability is a property of the binding, not of the type.",
+        book_links: [
+            (title: "The Rust Book: Method Syntax", url: "https://doc.rust-lang.org/book/ch05-03-method-syntax.html"),
+            (title: "The Rust Book: Variables and Mutability", url: "https://doc.rust-lang.org/book/ch03-01-variables-and-mutability.html"),
+        ],
+        prerequisites: ["structs_01_player_struct"],
+        engine_tags: ["entities"],
+    ),
+    (
+        id: "structs_03_enemy_builder",
+        topic: "structs",
+        kind: FromScratch,
+        difficulty: 3,
+        title: "The Enemy Factory",
+        story: "Level designers want to describe enemies like sentences: \"a slime, 30 hit points, fast, flying\". Constructors with six positional arguments are unreadable, so you will build a *builder*.",
+        task: "Write `EnemyBuilder`. `EnemyBuilder::new(name)` starts with hp 10, speed 1.0 and flying false. The methods `hp`, `speed` and `flying` take `self` by value, change one setting and return the builder so calls can be chained. `build` consumes the builder and returns the finished `Enemy`.",
+        signatures: [
+            "EnemyBuilder::new(name: &str) -> EnemyBuilder",
+            "fn hp(self, hp: u32) -> EnemyBuilder",
+            "fn speed(self, speed: f32) -> EnemyBuilder",
+            "fn flying(self, flying: bool) -> EnemyBuilder",
+            "fn build(self) -> Enemy",
+        ],
+        starter_code: r##"#[derive(Debug, PartialEq)]
+pub struct Enemy {
+    pub name: String,
+    pub hp: u32,
+    pub speed: f32,
+    pub flying: bool,
+}
+
+// Write `EnemyBuilder` here.
+"##,
+        hidden_tests: r##"
+#[test]
+fn defaults_are_sensible() {
+    let e = EnemyBuilder::new("slime").build();
+    assert_eq!(e, Enemy { name: "slime".to_string(), hp: 10, speed: 1.0, flying: false });
+}
+
+#[test]
+fn settings_can_be_chained_in_any_order() {
+    let bat = EnemyBuilder::new("bat").flying(true).speed(3.5).hp(25).build();
+    assert_eq!(bat, Enemy { name: "bat".to_string(), hp: 25, speed: 3.5, flying: true });
+}
+
+#[test]
+fn unset_fields_keep_their_defaults() {
+    let e = EnemyBuilder::new("golem").hp(500).build();
+    assert_eq!(e.hp, 500);
+    assert_eq!(e.speed, 1.0);
+    assert!(!e.flying);
+}
+"##,
+        hints: [
+            "The builder is a struct that mirrors the fields of `Enemy`. Each setter takes `mut self`, modifies a field and then returns `self`.",
+            "`pub fn hp(mut self, hp: u32) -> EnemyBuilder { self.hp = hp; self }` — taking `self` by value means each call consumes the old builder and hands back a new one.",
+            "pub struct EnemyBuilder { name: String, hp: u32, speed: f32, flying: bool }\n\nimpl EnemyBuilder {\n    pub fn new(name: &str) -> EnemyBuilder {\n        EnemyBuilder { name: name.to_string(), hp: 10, speed: 1.0, flying: false }\n    }\n    pub fn hp(mut self, hp: u32) -> EnemyBuilder { self.hp = hp; self }\n    // speed, flying, build …\n}",
+        ],
+        solution: r##"#[derive(Debug, PartialEq)]
+pub struct Enemy {
+    pub name: String,
+    pub hp: u32,
+    pub speed: f32,
+    pub flying: bool,
+}
+
+pub struct EnemyBuilder {
+    name: String,
+    hp: u32,
+    speed: f32,
+    flying: bool,
+}
+
+impl EnemyBuilder {
+    pub fn new(name: &str) -> EnemyBuilder {
+        EnemyBuilder { name: name.to_string(), hp: 10, speed: 1.0, flying: false }
+    }
+
+    pub fn hp(mut self, hp: u32) -> EnemyBuilder {
+        self.hp = hp;
+        self
+    }
+
+    pub fn speed(mut self, speed: f32) -> EnemyBuilder {
+        self.speed = speed;
+        self
+    }
+
+    pub fn flying(mut self, flying: bool) -> EnemyBuilder {
+        self.flying = flying;
+        self
+    }
+
+    pub fn build(self) -> Enemy {
+        Enemy { name: self.name, hp: self.hp, speed: self.speed, flying: self.flying }
+    }
+}
+"##,
+        explanation: "The builder pattern turns many optional settings into readable method chains. Methods that take `self` *by value* consume the builder and return it again, so ownership flows through the chain and nothing is copied; `build(self)` ends the chain by moving the fields out into the final struct. Fields of the builder are private, so the only way to make an `Enemy` this way is through valid defaults.",
+        book_links: [
+            (title: "The Rust Book: Method Syntax", url: "https://doc.rust-lang.org/book/ch05-03-method-syntax.html"),
+            (title: "The Rust Book: An Example Program Using Structs", url: "https://doc.rust-lang.org/book/ch05-02-example-structs.html"),
+        ],
+        prerequisites: ["structs_02_item_stack"],
+        engine_tags: ["entities"],
+    ),
+    (
+        id: "structs_04_predict_update",
+        topic: "structs",
+        kind: PredictOutput,
+        difficulty: 2,
+        title: "Struct Update Syntax",
+        story: "A teammate configures window presets with the `..` struct update syntax. Predict what the presets actually contain before they ship.",
+        task: "What does this program print?",
+        explanation: "`Config { width: 320, ..base.clone() }` takes the listed fields from the left and every remaining field from `base.clone()`: width 320, height 600, title \"Game\". The second struct overrides only the title and takes the rest from `base` — which moves `base`'s remaining fields, so `base` is no longer usable afterwards (that is fine, it isn't used again).",
+        solution: "320 600 Game\n800 600 Mini",
+        book_links: [
+            (title: "The Rust Book: Creating Instances from Other Instances with Struct Update Syntax", url: "https://doc.rust-lang.org/book/ch05-01-defining-structs.html"),
+        ],
+        prerequisites: ["structs_03_enemy_builder"],
+        engine_tags: ["entities"],
+        quiz: Some((
+            question: "What does this program print?",
+            code: r##"#[derive(Debug, Clone)]
+struct Config {
+    width: u32,
+    height: u32,
+    title: String,
+}
+
+fn main() {
+    let base = Config { width: 800, height: 600, title: String::from("Game") };
+    let small = Config { width: 320, ..base.clone() };
+    let custom = Config { title: String::from("Mini"), ..base };
+    println!("{} {} {}", small.width, small.height, small.title);
+    println!("{} {} {}", custom.width, custom.height, custom.title);
+}"##,
+            options: [
+                "320 600 Game\n800 600 Mini",
+                "320 600 Game\n320 600 Mini",
+                "320 0 Game\n800 600 Mini",
+                "It does not compile: `base` is used after being moved",
+            ],
+            correct: 0,
+            verify: RunOutput,
+        )),
+    ),
+    (
+        id: "structs_05_distance_bug",
+        topic: "structs",
+        kind: FindBug,
+        difficulty: 3,
+        title: "Why Do Enemies Never Chase Me?",
+        story: "The AI decides whether to chase the player using `distance_to`. Enemies standing straight above or below the player never react, no matter how close they are. The code compiles and looks reasonable at a glance.",
+        task: "Find and fix the bug in `distance_to`. Euclidean distance is the square root of dx² + dy².",
+        signatures: [
+            "pub fn distance_to(&self, other: &Point) -> f32",
+            "pub fn midpoint(&self, other: &Point) -> Point",
+        ],
+        starter_code: r##"#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Point {
+    pub x: f32,
+    pub y: f32,
+}
+
+impl Point {
+    pub fn distance_to(&self, other: &Point) -> f32 {
+        let dx = self.x - other.x;
+        let dy = self.y - self.y;
+        (dx * dx + dy * dy).sqrt()
+    }
+
+    pub fn midpoint(&self, other: &Point) -> Point {
+        Point { x: (self.x + other.x) / 2.0, y: (self.y + other.y) / 2.0 }
+    }
+}
+"##,
+        hidden_tests: r##"
+fn p(x: f32, y: f32) -> Point {
+    Point { x, y }
+}
+
+#[test]
+fn classic_three_four_five() {
+    assert_eq!(p(0.0, 0.0).distance_to(&p(3.0, 4.0)), 5.0);
+}
+
+#[test]
+fn vertical_distance_counts() {
+    assert_eq!(p(1.0, 1.0).distance_to(&p(1.0, 4.0)), 3.0);
+    assert_eq!(p(-2.0, 5.0).distance_to(&p(-2.0, -5.0)), 10.0);
+}
+
+#[test]
+fn distance_is_symmetric_and_zero_to_self() {
+    let (a, b) = (p(1.5, -2.0), p(-4.0, 3.5));
+    assert!((a.distance_to(&b) - b.distance_to(&a)).abs() < 1e-6);
+    assert_eq!(a.distance_to(&a), 0.0);
+}
+
+#[test]
+fn midpoint_is_halfway() {
+    assert_eq!(p(0.0, 0.0).midpoint(&p(4.0, 6.0)), p(2.0, 3.0));
+}
+"##,
+        hints: [
+            "Read each line of `distance_to` slowly. Two of the three arithmetic lines mirror each other — do they really?",
+            "`dx` subtracts `other.x` from `self.x`. Now look at what `dy` subtracts from `self.y`.",
+            "        let dy = self.y - other.y;",
+        ],
+        solution: r##"#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Point {
+    pub x: f32,
+    pub y: f32,
+}
+
+impl Point {
+    pub fn distance_to(&self, other: &Point) -> f32 {
+        let dx = self.x - other.x;
+        let dy = self.y - other.y;
+        (dx * dx + dy * dy).sqrt()
+    }
+
+    pub fn midpoint(&self, other: &Point) -> Point {
+        Point { x: (self.x + other.x) / 2.0, y: (self.y + other.y) / 2.0 }
+    }
+}
+"##,
+        explanation: "A copy-paste typo (`self.y - self.y`) is always zero, so any enemy that differs from the player only in y looked \"zero units away\" on that axis — and the distance collapsed to a purely horizontal one. The compiler cannot catch this because it is valid, well-typed code; unit tests with *vertical* cases can. Always test each axis separately.",
+        book_links: [
+            (title: "The Rust Book: An Example Program Using Structs", url: "https://doc.rust-lang.org/book/ch05-02-example-structs.html"),
+        ],
+        prerequisites: ["structs_04_predict_update"],
+        engine_tags: ["entities"],
+    ),
+]

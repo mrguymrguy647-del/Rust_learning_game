@@ -12,7 +12,7 @@ pub mod validate;
 
 pub use diagnostics::{Diagnostic, Level};
 pub use report::{Phase, RunReport, Verdict};
-pub use runner::{spawn_run, RunEvent, RunHandle, Runner, RunnerConfig};
+pub use runner::{spawn_run, RunEvent, RunHandle, Runner, RunnerConfig, SnippetResult};
 pub use toolchain::{Toolchain, ToolchainError, INSTALL_INSTRUCTIONS};
 
 /// Grade a multiple-choice answer.

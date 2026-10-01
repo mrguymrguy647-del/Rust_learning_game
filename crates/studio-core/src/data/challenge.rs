@@ -92,6 +92,20 @@ impl Check {
     }
 }
 
+/// How the validator proves a quiz's answer is right using the real compiler.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum QuizVerify {
+    /// Structural check only (reasoning questions).
+    #[default]
+    None,
+    /// `code` is a complete program; compiling and running it must print exactly `solution`.
+    RunOutput,
+    /// Each option, placed into `wrapper`, is compiled: exactly the correct option must FAIL.
+    OnlyCorrectFailsToCompile,
+    /// Each option, placed into `wrapper`, is compiled: exactly the correct option must COMPILE.
+    OnlyCorrectCompiles,
+}
+
 /// Multiple-choice payload used by `PredictOutput` and `CodeReview`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Quiz {
@@ -105,6 +119,12 @@ pub struct Quiz {
     /// Render each option as a code block (code review snippets).
     #[serde(default)]
     pub options_are_code: bool,
+    #[serde(default)]
+    pub verify: QuizVerify,
+    /// Source template for `OnlyCorrect…` verification; `{CODE}` is replaced by an option.
+    /// Defaults to `fn main() {\n{CODE}\n}`.
+    #[serde(default)]
+    pub wrapper: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

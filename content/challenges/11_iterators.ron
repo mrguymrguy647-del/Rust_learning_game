@@ -1,0 +1,309 @@
+// Topic 11: Closures & Iterators — "Particle systems & AI filters"
+[
+    (
+        id: "iterators_01_closure_borrow",
+        topic: "iterators",
+        kind: FixCompile,
+        difficulty: 2,
+        title: "The Click Counter Closure",
+        story: "The UI keeps a click counter by sharing a tiny closure. A debug print was added in the middle, and now the build is broken.",
+        task: "Fix the compile error. `count_clicks` must still call `record` three times and return 3. You may move code around.",
+        signatures: ["pub fn count_clicks() -> u32"],
+        starter_code: r##"pub fn count_clicks() -> u32 {
+    let mut clicks = 0;
+    let mut record = || clicks += 1;
+
+    record();
+    record();
+    println!("clicks so far: {}", clicks);
+    record();
+
+    clicks
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn counts_three_clicks() {
+    assert_eq!(count_clicks(), 3);
+}
+
+#[test]
+fn closures_that_mutate_need_mut() {
+    let mut total = 0;
+    let mut add = |n: u32| total += n;
+    add(2);
+    add(5);
+    assert_eq!(total, 7);
+}
+"##,
+        hints: [
+            "A closure that changes a variable holds a *mutable borrow* of it for as long as the closure is still going to be used. Which line reads `clicks` while `record` is still in use?",
+            "Either print after the last call to `record()` or remove the print. The borrow ends after the closure's last use (non-lexical lifetimes).",
+            "pub fn count_clicks() -> u32 {\n    let mut clicks = 0;\n    let mut record = || clicks += 1;\n    record();\n    record();\n    record();\n    println!(\"clicks so far: {}\", clicks);\n    clicks\n}",
+        ],
+        solution: r##"pub fn count_clicks() -> u32 {
+    let mut clicks = 0;
+    let mut record = || clicks += 1;
+
+    record();
+    record();
+    record();
+    println!("clicks so far: {}", clicks);
+
+    clicks
+}
+"##,
+        explanation: "A closure captures variables from its environment in the least demanding way it can: by shared reference, by mutable reference, or by value. `record` changes `clicks`, so it captures it by `&mut`. The borrow checker's usual rules apply: while a mutable borrow is alive you cannot read the variable. The borrow lasts until the closure's LAST use, so moving the `println!` below the final call fixes it.",
+        book_links: [
+            (title: "The Rust Book: Closures — Capturing the Environment", url: "https://doc.rust-lang.org/book/ch13-01-closures.html"),
+            (title: "Rust by Example: Closures — Capturing", url: "https://doc.rust-lang.org/rust-by-example/fn/closures/capture.html"),
+        ],
+        prerequisites: [],
+        engine_tags: ["ui", "events"],
+    ),
+    (
+        id: "iterators_02_loop_to_chain",
+        topic: "iterators",
+        kind: Refactor,
+        difficulty: 3,
+        title: "Critical Bonus Damage",
+        story: "The combat log adds bonus damage for critical hits. It works, but it is written like C. The team's style guide asks for iterator chains.",
+        task: "Refactor `crit_bonus` into an iterator chain: no `for`, no `mut`. Use `.iter()`, `.filter(…)`, `.map(…)` and `.sum()`. Behaviour must stay the same.",
+        signatures: ["pub fn crit_bonus(hits: &[(u32, bool)]) -> u32"],
+        starter_code: r##"/// Each hit is (damage, was_critical). Critical hits deal double damage
+/// as a bonus; the function returns the sum of all bonus damage.
+pub fn crit_bonus(hits: &[(u32, bool)]) -> u32 {
+    let mut total = 0;
+    for hit in hits {
+        if hit.1 {
+            total += hit.0 * 2;
+        }
+    }
+    total
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn sums_only_critical_hits() {
+    let hits = [(10, true), (7, false), (5, true)];
+    assert_eq!(crit_bonus(&hits), 30);
+}
+
+#[test]
+fn no_crits_no_bonus() {
+    assert_eq!(crit_bonus(&[(10, false), (3, false)]), 0);
+    assert_eq!(crit_bonus(&[]), 0);
+}
+
+#[test]
+fn handles_many_hits() {
+    let hits: Vec<(u32, bool)> = (1..=100).map(|n| (n, n % 2 == 0)).collect();
+    // Even n from 2 to 100: 2 * (2 + 4 + ... + 100) = 2 * 2550.
+    assert_eq!(crit_bonus(&hits), 5100);
+}
+"##,
+        checks: [
+            ForbidWord(word: "for", message: "Replace the `for` loop with an iterator chain."),
+            ForbidWord(word: "while", message: "Replace the loop with an iterator chain."),
+            ForbidWord(word: "mut", message: "An iterator chain needs no mutable variable: `.sum()` does the accumulating."),
+            RequireText(text: ".iter()", message: "Start the chain with `.iter()`."),
+            RequireText(text: ".filter(", message: "Use `.filter(…)` to keep only the critical hits."),
+            RequireText(text: ".sum", message: "Finish the chain with `.sum()`."),
+        ],
+        hints: [
+            "An iterator chain has three parts: a source (`.iter()`), adapters that transform it (`.filter`, `.map`) and a consumer that produces the result (`.sum`).",
+            "Filter the tuples whose second field is `true`, map each to `damage * 2`, then sum. Closure parameters can destructure tuples: `|&(damage, _)| …`.",
+            "pub fn crit_bonus(hits: &[(u32, bool)]) -> u32 {\n    hits.iter()\n        .filter(|(_, crit)| *crit)\n        .map(|(damage, _)| damage * 2)\n        .sum()\n}",
+        ],
+        solution: r##"pub fn crit_bonus(hits: &[(u32, bool)]) -> u32 {
+    hits.iter()
+        .filter(|(_, crit)| *crit)
+        .map(|(damage, _)| damage * 2)
+        .sum()
+}
+"##,
+        explanation: "Iterator adapters are lazy: `filter` and `map` build a pipeline that does nothing until a consuming method like `sum` pulls items through it. The chain says WHAT you want (critical hits, doubled, added up) instead of HOW to manage an accumulator and an index, so there is no `mut` state to get wrong. Thanks to zero-cost abstractions it compiles to the same machine code as the hand-written loop.",
+        book_links: [
+            (title: "The Rust Book: Processing a Series of Items with Iterators", url: "https://doc.rust-lang.org/book/ch13-02-iterators.html"),
+            (title: "Rust by Example: Iterator", url: "https://doc.rust-lang.org/rust-by-example/trait/iter.html"),
+        ],
+        prerequisites: ["iterators_01_closure_borrow"],
+        engine_tags: ["combat", "ai"],
+    ),
+    (
+        id: "iterators_03_wave_iterator",
+        topic: "iterators",
+        kind: FromScratch,
+        difficulty: 3,
+        title: "An Enemy Wave You Can Iterate",
+        story: "Level designers want to write `for hp in Wave::new(5)` and also chain it with `filter`, `sum` and friends. That means the wave must be a real `Iterator`.",
+        task: "Write `struct Wave` with `Wave::new(count: u32)` and implement `Iterator<Item = u32>` for it. The wave yields `count` enemy hit-point values: 10, 20, 30, … (10 × position, starting at 1).",
+        signatures: [
+            "pub struct Wave",
+            "impl Wave { pub fn new(count: u32) -> Wave }",
+            "impl Iterator for Wave { type Item = u32; … }",
+        ],
+        starter_code: "// Write `Wave`, `Wave::new` and the `Iterator` impl here.\n",
+        hidden_tests: r##"
+#[test]
+fn yields_increasing_hp() {
+    let hp: Vec<u32> = Wave::new(3).collect();
+    assert_eq!(hp, vec![10, 20, 30]);
+}
+
+#[test]
+fn empty_wave_is_empty() {
+    assert_eq!(Wave::new(0).count(), 0);
+    assert_eq!(Wave::new(0).next(), None);
+}
+
+#[test]
+fn works_with_for_loops_and_adapters() {
+    let mut seen = 0;
+    for hp in Wave::new(4) {
+        seen += hp;
+    }
+    assert_eq!(seen, 100);
+
+    let strong: Vec<u32> = Wave::new(6).filter(|hp| hp % 20 == 0).collect();
+    assert_eq!(strong, vec![20, 40, 60]);
+    assert_eq!(Wave::new(100).sum::<u32>(), 10 * 5050);
+}
+
+#[test]
+fn stays_finished() {
+    let mut w = Wave::new(1);
+    assert_eq!(w.next(), Some(10));
+    assert_eq!(w.next(), None);
+    assert_eq!(w.next(), None);
+}
+"##,
+        hints: [
+            "Implementing `Iterator` means choosing an `Item` type and writing ONE method: `fn next(&mut self) -> Option<Self::Item>`. Everything else (`map`, `filter`, `sum`, …) comes for free.",
+            "Store how many enemies have been spawned and how many are wanted. `next` returns `None` once they are equal; otherwise it advances the counter and returns `Some(10 * spawned)`.",
+            "pub struct Wave { spawned: u32, count: u32 }\n\nimpl Wave {\n    pub fn new(count: u32) -> Wave { Wave { spawned: 0, count } }\n}\n\nimpl Iterator for Wave {\n    type Item = u32;\n    fn next(&mut self) -> Option<u32> {\n        if self.spawned == self.count { return None; }\n        self.spawned += 1;\n        Some(10 * self.spawned)\n    }\n}",
+        ],
+        solution: r##"pub struct Wave {
+    spawned: u32,
+    count: u32,
+}
+
+impl Wave {
+    pub fn new(count: u32) -> Wave {
+        Wave { spawned: 0, count }
+    }
+}
+
+impl Iterator for Wave {
+    type Item = u32;
+
+    fn next(&mut self) -> Option<u32> {
+        if self.spawned == self.count {
+            return None;
+        }
+        self.spawned += 1;
+        Some(10 * self.spawned)
+    }
+}
+"##,
+        explanation: "The `Iterator` trait has a single required method, `next`, which returns `Some(item)` until the sequence is exhausted and `None` afterwards. All the adapter and consumer methods (`filter`, `map`, `sum`, `collect`, …) are default methods built on top of `next`, so implementing one method makes your type work with a `for` loop and with every iterator chain in the ecosystem. State lives in the struct, which is why `next` takes `&mut self`.",
+        book_links: [
+            (title: "The Rust Book: The Iterator Trait and the next Method", url: "https://doc.rust-lang.org/book/ch13-02-iterators.html"),
+            (title: "Rust by Example: Iterator", url: "https://doc.rust-lang.org/rust-by-example/trait/iter.html"),
+        ],
+        prerequisites: ["iterators_02_loop_to_chain"],
+        engine_tags: ["ai", "spawning"],
+    ),
+    (
+        id: "iterators_04_smoothing_bug",
+        topic: "iterators",
+        kind: FindBug,
+        difficulty: 3,
+        title: "The Jittery FPS Counter",
+        story: "The FPS display is supposed to show a smoothed value: the average of every 3 consecutive frame times. Testers say it jumps around and the last number looks wrong. The code compiles and looks reasonable.",
+        task: "Find and fix the logic bug in `smooth`: it should return the average of EVERY run of 3 consecutive values (a sliding window), so 5 inputs give 3 outputs.",
+        signatures: ["pub fn smooth(times: &[f32]) -> Vec<f32>"],
+        starter_code: r##"/// Average of every 3 consecutive frame times (sliding window).
+pub fn smooth(times: &[f32]) -> Vec<f32> {
+    times
+        .chunks(3)
+        .map(|w| w.iter().sum::<f32>() / 3.0)
+        .collect()
+}
+"##,
+        hidden_tests: r##"
+#[test]
+fn sliding_window_of_three() {
+    assert_eq!(smooth(&[1.0, 2.0, 3.0, 4.0, 5.0]), vec![2.0, 3.0, 4.0]);
+}
+
+#[test]
+fn exactly_three_values_give_one_average() {
+    assert_eq!(smooth(&[3.0, 6.0, 9.0]), vec![6.0]);
+}
+
+#[test]
+fn too_few_values_give_nothing() {
+    assert!(smooth(&[1.0, 2.0]).is_empty());
+    assert!(smooth(&[]).is_empty());
+}
+"##,
+        hints: [
+            "Run the first test by hand: `[1,2,3,4,5]` should give `[2,3,4]`. What does the code give? Look at what `chunks(3)` produces compared with what you want.",
+            "`chunks(n)` splits the slice into NON-overlapping pieces (and the last piece may be shorter!). A sliding window over overlapping runs is a different adapter.",
+            "times.windows(3).map(|w| w.iter().sum::<f32>() / 3.0).collect()",
+        ],
+        solution: r##"pub fn smooth(times: &[f32]) -> Vec<f32> {
+    times
+        .windows(3)
+        .map(|w| w.iter().sum::<f32>() / 3.0)
+        .collect()
+}
+"##,
+        explanation: "`chunks(3)` cuts a slice into separate groups of 3 (the last may be shorter), while `windows(3)` yields every overlapping run of 3 consecutive elements. For the shorter last chunk the old code even divided by 3 anyway, producing a wrong average. The standard library has many slice adapters (`chunks`, `windows`, `split`, `zip`, …) — picking the right one is most of the job. `windows` also returns nothing at all when the slice is too short.",
+        book_links: [
+            (title: "The Rust Book: Iterator Adapters", url: "https://doc.rust-lang.org/book/ch13-02-iterators.html"),
+            (title: "std docs: slice::windows", url: "https://doc.rust-lang.org/std/primitive.slice.html#method.windows"),
+        ],
+        prerequisites: ["iterators_03_wave_iterator"],
+        engine_tags: ["ui", "performance"],
+    ),
+    (
+        id: "iterators_05_predict_lazy",
+        topic: "iterators",
+        kind: PredictOutput,
+        difficulty: 4,
+        title: "Lazy Until Asked",
+        story: "A tool programmer added a `println!` inside a `map` to see how often it runs, and is surprised by the log. Predict it before running it.",
+        task: "What does this program print?",
+        explanation: "Iterator adapters are lazy: creating `doubled` runs no code, so \"built\" is printed first. The `filter(..).next()` call pulls items one at a time: `map 1` produces 2 (rejected by the filter), then `map 2` produces 4 (accepted) — `next()` returns `Some(4)` and the iterator is dropped without ever looking at 3 and 4.",
+        solution: "built\nmap 1\nmap 2\nSome(4)",
+        book_links: [
+            (title: "The Rust Book: Iterators Are Lazy", url: "https://doc.rust-lang.org/book/ch13-02-iterators.html"),
+            (title: "Rust by Example: Iterator::find and friends", url: "https://doc.rust-lang.org/rust-by-example/trait/iter.html"),
+        ],
+        prerequisites: ["iterators_04_smoothing_bug"],
+        engine_tags: ["ai"],
+        quiz: Some((
+            question: "What does this program print?",
+            code: r##"fn main() {
+    let numbers = vec![1, 2, 3, 4];
+    let doubled = numbers.iter().map(|n| {
+        println!("map {}", n);
+        n * 2
+    });
+    println!("built");
+    let first_big = doubled.filter(|n| *n > 3).next();
+    println!("{:?}", first_big);
+}"##,
+            options: [
+                "built\nmap 1\nmap 2\nSome(4)",
+                "map 1\nmap 2\nmap 3\nmap 4\nbuilt\nSome(4)",
+                "built\nmap 1\nmap 2\nmap 3\nmap 4\nSome(4)",
+                "map 1\nmap 2\nbuilt\nSome(4)",
+            ],
+            correct: 0,
+            verify: RunOutput,
+        )),
+    ),
+]
